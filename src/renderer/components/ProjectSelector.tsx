@@ -1,0 +1,395 @@
+import React, { useState, useEffect } from 'react';
+import { FolderOpen, PlusCircle, CheckCircle, Key } from 'lucide-react';
+import { bridge } from '../services/bridge';
+
+type AIProvider = 'claude' | 'gemini';
+
+interface ProjectSelectorProps {
+  onProjectSelect: (path: string) => void;
+  currentPath: string | null;
+  hasApiKey: boolean | null;
+  onSaveApiKey: (key: string) => void;
+  keyVersion: number;
+  onProviderChange?: () => void;
+}
+
+const ProjectSelector: React.FC<ProjectSelectorProps> = ({ 
+  onProjectSelect, 
+  currentPath, 
+  hasApiKey, 
+  onSaveApiKey,
+  keyVersion,
+  onProviderChange
+}) => {
+  const [newProjectPath, setNewProjectPath] = useState<string | null>(null);
+  const [isInitializing, setIsInitializing] = useState(false);
+  const [localApiKey, setLocalApiKey] = useState('');
+  const [availableModels, setAvailableModels] = useState<string[]>([]);
+  const [selectedModel, setSelectedModel] = useState('');
+  const [modelStatus, setModelStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
+  const [errorMessage, setErrorMessage] = useState('');
+  const [isTestingModel, setIsTestingModel] = useState(false);
+  const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
+  const [currentProvider, setCurrentProvider] = useState<AIProvider>('gemini');
+
+  useEffect(() => {
+    const fetchProvider = async () => {
+      try {
+        const provider = await bridge.invoke('get-ai-provider');
+        setCurrentProvider(provider || 'gemini');
+      } catch (e) {
+        console.error('Failed to fetch provider:', e);
+      }
+    };
+    fetchProvider();
+  }, []);
+
+  useEffect(() => {
+    if (hasApiKey) {
+      const fetchModels = async () => {
+        setModelStatus('loading');
+        setErrorMessage('');
+        try {
+          const models = await bridge.invoke('debug-list-models');
+          if (Array.isArray(models)) {
+            setAvailableModels(models);
+            if (models.length > 0 && !selectedModel) {
+              setSelectedModel(models[0]);
+            }
+            setModelStatus('success');
+          } else if (models && models.error) {
+            setErrorMessage(models.error);
+            setModelStatus('error');
+          } else {
+            setErrorMessage('Invalid response from server');
+            setModelStatus('error');
+          }
+        } catch (e: any) {
+          setErrorMessage(e.message || 'Unknown network error');
+          setModelStatus('error');
+        }
+      };
+      fetchModels();
+    }
+  }, [hasApiKey, keyVersion, currentProvider]);
+
+  const handleProviderChange = async (provider: AIProvider) => {
+    if (provider === currentProvider) return; // Already on this provider
+    
+    try {
+      console.log(`Switching to ${provider}...`);
+      const result = await bridge.invoke('set-ai-provider', provider === 'claude');
+      console.log('Provider switch result:', result);
+      if (result && result.provider) {
+        setCurrentProvider(result.provider);
+        setSelectedModel(''); // Reset model selection
+        setAvailableModels([]);
+        setModelStatus('idle');
+        // Notify parent to re-check API key for new provider
+        if (onProviderChange) {
+          await onProviderChange();
+        }
+      } else {
+        console.error('Invalid provider switch result:', result);
+      }
+    } catch (e) {
+      console.error('Failed to set provider:', e);
+      setTestResult({ success: false, message: `Failed to switch provider: ${e instanceof Error ? e.message : String(e)}` });
+    }
+  };
+
+  const handleModelChange = async (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const model = e.target.value;
+    setSelectedModel(model);
+    await bridge.invoke('set-active-model', model);
+  };
+
+  const handleTestModel = async () => {
+    setIsTestingModel(true);
+    setTestResult(null);
+    try {
+      const response = await bridge.invoke('ping');
+      if (response && response.success) {
+        setTestResult({ success: true, message: `Connected! Working model: ${response.model}` });
+      } else {
+        const msg = response?.error || JSON.stringify(response, null, 2) || 'Unknown error';
+        setTestResult({ success: false, message: `Failed:\n\n${msg}` });
+      }
+    } catch (e: any) {
+      setTestResult({ success: false, message: `Error:\n\n${e.message}` });
+    } finally {
+      setIsTestingModel(false);
+    }
+  };
+
+  const handleSelectExisting = async () => {
+    const path = await bridge.invoke('select-directory');
+    if (path) {
+      onProjectSelect(path);
+    }
+  };
+
+  const handleSelectNewDestination = async () => {
+    const path = await bridge.invoke('select-directory');
+    if (path) {
+      setNewProjectPath(path);
+    }
+  };
+
+  const handleInit = async () => {
+    if (!newProjectPath) return;
+    setIsInitializing(true);
+    try {
+      const success = await bridge.invoke('init-project', newProjectPath);
+      if (success) {
+        onProjectSelect(newProjectPath);
+        setNewProjectPath(null);
+        setTestResult({ success: true, message: 'Project initialized!' });
+      } else {
+        setTestResult({ success: false, message: 'Initialization failed.' });
+      }
+    } finally {
+      setIsInitializing(false);
+    }
+  };
+
+  const providerInfo = {
+    claude: {
+      name: 'Claude',
+      color: 'purple',
+      bgColor: 'bg-purple-50',
+      borderColor: 'border-purple-100',
+      textColor: 'text-purple-800',
+      inputBorder: 'border-purple-200',
+      buttonBg: 'bg-purple-600',
+      buttonHover: 'hover:bg-purple-700',
+      linkUrl: 'https://console.anthropic.com/',
+      linkText: 'Anthropic Console',
+      defaultModel: 'claude-3-5-sonnet-20241022'
+    },
+    gemini: {
+      name: 'Gemini',
+      color: 'blue',
+      bgColor: 'bg-blue-50',
+      borderColor: 'border-blue-100',
+      textColor: 'text-blue-800',
+      inputBorder: 'border-blue-200',
+      buttonBg: 'bg-blue-600',
+      buttonHover: 'hover:bg-blue-700',
+      linkUrl: 'https://aistudio.google.com/',
+      linkText: 'Google AI Studio',
+      defaultModel: 'gemini-2.5-flash'
+    }
+  };
+
+  const info = providerInfo[currentProvider];
+
+  return (
+    <div className="bg-white p-4 rounded-lg shadow-sm border border-gray-200 mb-4">
+      <h2 className="text-lg font-semibold mb-4 text-gray-800">Configuration</h2>
+      
+      {/* Provider Selection */}
+      <div className="mb-4 p-3 bg-gray-50 rounded-lg border border-gray-100">
+        <label className="text-sm font-medium text-gray-700 mb-2 block">
+          AI Provider
+        </label>
+        <div className="flex gap-2">
+          <button
+            onClick={() => handleProviderChange('claude')}
+            className={`flex-1 px-3 py-2 rounded text-sm font-medium transition ${
+              currentProvider === 'claude'
+                ? 'bg-purple-600 text-white'
+                : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-50'
+            }`}
+          >
+            Claude
+          </button>
+          <button
+            onClick={() => handleProviderChange('gemini')}
+            className={`flex-1 px-3 py-2 rounded text-sm font-medium transition ${
+              currentProvider === 'gemini'
+                ? 'bg-blue-600 text-white'
+                : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-50'
+            }`}
+          >
+            Gemini
+          </button>
+        </div>
+      </div>
+
+      {/* API Key Input */}
+      <div className={`mb-6 p-3 ${info.bgColor} rounded-lg border ${info.borderColor}`}>
+        <h3 className={`text-sm font-medium ${info.textColor} flex items-center mb-2`}>
+          <Key size={14} className="mr-1" />
+          {info.name} API Key
+        </h3>
+        <div className="flex space-x-2">
+          <input
+            type="password"
+            value={localApiKey}
+            onChange={(e) => setLocalApiKey(e.target.value)}
+            placeholder={`Enter your ${info.name} API Key...`}
+            className={`flex-1 px-3 py-1.5 text-sm border ${info.inputBorder} rounded focus:outline-none focus:ring-1 ${currentProvider === 'claude' ? 'focus:ring-purple-500' : 'focus:ring-blue-500'} text-gray-900 bg-white relative z-10 cursor-text`}
+          />
+          <button
+            onClick={async () => {
+              try {
+                const success = await bridge.invoke('set-api-key', { apiKey: localApiKey, provider: currentProvider });
+                if (success) {
+                  onSaveApiKey(localApiKey);
+                  setLocalApiKey('');
+                  // Trigger provider change callback to refresh API key status
+                  if (onProviderChange) {
+                    onProviderChange();
+                  }
+                }
+              } catch (e: any) {
+                console.error('Failed to save API key:', e);
+                setTestResult({ success: false, message: `Failed to save API key: ${e.message}` });
+              }
+            }}
+            disabled={!localApiKey.trim()}
+            className={`px-3 py-1.5 ${info.buttonBg} text-white text-sm rounded ${info.buttonHover} transition disabled:opacity-50 disabled:cursor-not-allowed`}
+          >
+            Save
+          </button>
+        </div>
+        <p className={`mt-2 text-[10px] ${info.textColor} flex justify-between items-center`}>
+          <span>
+            Required for AI chat. Get one at{' '}
+            <button 
+              onClick={() => bridge.invoke('open-external-url', info.linkUrl)}
+              className="underline hover:opacity-80 bg-transparent border-none p-0 cursor-pointer"
+            >
+              {info.linkText}
+            </button>.
+          </span>
+          {hasApiKey && <span className="text-green-600 font-bold ml-2">✓ Configured</span>}
+        </p>
+
+        {hasApiKey && (
+          <div className="mt-4 pt-4 border-t border-opacity-20" style={{ borderColor: `var(--${info.color}-200)` }}>
+            <div className="flex justify-between items-center mb-1.5">
+              <label className={`text-[10px] font-medium ${info.textColor}`}>
+                Active {info.name} Model
+              </label>
+              <div className="flex gap-2">
+                {modelStatus === 'success' && (
+                  <button
+                    onClick={handleTestModel}
+                    className={`text-[10px] ${info.textColor} hover:opacity-80 underline`}
+                  >
+                    {isTestingModel ? 'Testing...' : 'Test'}
+                  </button>
+                )}
+                <button
+                  onClick={() => bridge.invoke('open-external-url', currentProvider === 'claude' ? 'https://docs.anthropic.com/claude/reference/rate-limits' : 'https://ai.dev/rate-limit')}
+                  className="text-[10px] text-gray-500 hover:text-gray-700 underline"
+                >
+                  Quota
+                </button>
+              </div>
+            </div>
+            
+            {modelStatus === 'loading' && (
+              <div className={`text-[10px] ${info.textColor} opacity-60 animate-pulse italic`}>
+                Scanning models...
+              </div>
+            )}
+            
+            {modelStatus === 'error' && (
+              <div className="text-[10px] text-red-500 italic break-words">
+                Failed to load models: {errorMessage}
+              </div>
+            )}
+            
+            {modelStatus === 'success' && availableModels.length > 0 ? (
+              <div className="space-y-2">
+                <select
+                  value={selectedModel}
+                  onChange={handleModelChange}
+                  className={`w-full px-2 py-1.5 text-xs border ${info.inputBorder} rounded bg-white text-gray-700 focus:outline-none focus:ring-1 ${currentProvider === 'claude' ? 'focus:ring-purple-500' : 'focus:ring-blue-500'}`}
+                >
+                  {availableModels.map(model => (
+                    <option key={model} value={model}>
+                      {model}
+                    </option>
+                  ))}
+                </select>
+                
+                {testResult && (
+                  <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[9999] p-4">
+                    <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full p-6 flex flex-col max-h-[80vh]">
+                      <div className="flex justify-between items-center mb-4">
+                        <h3 className={`text-lg font-bold ${testResult.success ? 'text-green-600' : 'text-red-600'}`}>
+                          {testResult.success ? 'Success' : 'Connection Error'}
+                        </h3>
+                        <button onClick={() => setTestResult(null)} className="text-gray-400 hover:text-gray-600">✕</button>
+                      </div>
+                      <div className="flex-1 overflow-y-auto bg-gray-50 p-4 rounded border border-gray-200 text-xs font-mono break-all whitespace-pre-wrap select-text cursor-text leading-relaxed">
+                        {testResult.message}
+                      </div>
+                      <button 
+                        onClick={() => setTestResult(null)}
+                        className="mt-4 w-full py-2 bg-gray-800 text-white rounded hover:bg-black transition"
+                      >
+                        Close
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            ) : modelStatus === 'success' && (
+              <div className="text-[10px] text-gray-500 italic">
+                No models found.
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div className="space-y-3">
+          <h3 className="text-sm font-medium text-gray-700 uppercase tracking-wider">Open Existing</h3>
+          <button
+            onClick={handleSelectExisting}
+            className="w-full flex items-center justify-center px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition"
+          >
+            <FolderOpen size={18} className="mr-2" />
+            {currentPath ? 'Change Project' : 'Select Project'}
+          </button>
+          <div className="text-xs text-gray-500 truncate bg-gray-50 p-2 rounded border border-gray-100">
+            {currentPath || 'No project selected'}
+          </div>
+        </div>
+
+        <div className="space-y-3 border-l pl-6 border-gray-100">
+          <h3 className="text-sm font-medium text-gray-700 uppercase tracking-wider">Create New</h3>
+          <div className="flex flex-col space-y-2">
+            <button
+              onClick={handleSelectNewDestination}
+              className="w-full flex items-center justify-center px-4 py-2 bg-gray-100 text-gray-700 rounded hover:bg-gray-200 transition"
+            >
+              <PlusCircle size={18} className="mr-2" />
+              {newProjectPath ? 'Change Destination' : 'Select Destination'}
+            </button>
+            <div className="text-xs text-gray-500 truncate bg-gray-50 p-2 rounded border border-gray-100 min-h-[32px]">
+              {newProjectPath || 'No destination'}
+            </div>
+            <button
+              onClick={handleInit}
+              disabled={!newProjectPath || isInitializing}
+              className={`w-full flex items-center justify-center px-4 py-2 text-white rounded transition ${
+                !newProjectPath || isInitializing ? 'bg-gray-300 cursor-not-allowed' : 'bg-green-600 hover:bg-green-700'
+              }`}
+            >
+              {isInitializing ? 'Initializing...' : 'Init New Project'}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default ProjectSelector;

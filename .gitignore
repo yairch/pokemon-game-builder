@@ -1,0 +1,10 @@
+node_modules
+
+# Build output
+dist/
+
+# Pokemon Essentials templates (large binary assets)
+templates/
+
+# API Keys and sensitive configuration
+src/main/constants.ts

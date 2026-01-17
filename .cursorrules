@@ -1,0 +1,30 @@
+# Pokemon Game Builder - Cursor Rules
+
+You are an expert AI developer helping to build a Pokemon Game Builder for RPG Maker XP and Pokemon 
+Essentials.
+
+## Project Essence
+- **Core Technology**: Electron, React, TypeScript, Ruby Bridge.
+- **Mission**: Use AI to automate RPG Maker XP game development tasks.
+## Visual Context
+- **CRITICAL**: If you need visual context of the app's current state (UI layout, style issues, console errors, or specific component behavior), you MUST ask the user to provide a screenshot or copy-paste the console output.
+
+## Code Standards
+- **TypeScript**: Use strict typing. Shared types live in `src/shared/types.ts`.
+- **Electron**: IPC communication is the standard for frontend-backend interaction.
+- **Ruby Bridge**: All `.rxdata` manipulation MUST go through the Ruby bridge (`src/bridge/`).
+- **Styles**: Use Tailwind CSS for all UI components.
+
+## Knowledge Context
+- **RPG Maker XP**: Uses Ruby's `Marshal` format for data storage (`.rxdata`).
+- **Pokemon Essentials**: A specific framework built on top of RPG Maker XP.
+- **Marshal Format**: Binary format. The project uses a Ruby script to bridge this to JSON for the TypeScript side.
+
+## Development Workflow
+- **Frontend Dev**: `npm run dev` (Vite, accessible at http://localhost:5173)
+- **Main Build**: `npm run main:build` (TSC)
+- **Full App**: `npm run electron:dev` (Concurrent Vite + Main Watcher)
+
+## Communication
+- Be concise and technical.
+- Explain the interaction between Electron Main and the Ruby bridge when relevant.
