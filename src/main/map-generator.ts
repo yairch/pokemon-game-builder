@@ -1,13 +1,28 @@
 import { spawn } from 'child_process';
 import * as path from 'path';
 import * as fs from 'fs-extra';
-import { MapData } from '../shared/types';
+import { app } from 'electron';
+import { MapData, MapSpec, MapEventSpec } from '../shared/types';
 
 export class MapGenerator {
   private rubyScriptPath: string;
 
   constructor() {
-    this.rubyScriptPath = path.join(__dirname, '../bridge/marshal_handler.rb');
+    this.rubyScriptPath = this.resolveRubyBridgePath();
+  }
+
+  private resolveRubyBridgePath(): string {
+    const packagedPath = path.join(app.getAppPath(), 'dist', 'bridge', 'marshal_handler.rb');
+    if (fs.existsSync(packagedPath)) {
+      return packagedPath;
+    }
+
+    const devPath = path.join(process.cwd(), 'src', 'bridge', 'marshal_handler.rb');
+    if (fs.existsSync(devPath)) {
+      return devPath;
+    }
+
+    return path.join(__dirname, '../bridge/marshal_handler.rb');
   }
 
   async generateMapFile(projectPath: string, mapId: number, mapData: MapData): Promise<void> {
@@ -52,9 +67,78 @@ export class MapGenerator {
     });
   }
 
-  // Helper to ensure the map is added to MapInfos.rxdata so it shows up in RPG Maker XP
-  async registerMapInInfos(projectPath: string, mapId: number, name: string) {
-    // This will eventually also be handled by the Ruby bridge
-    // For the POC, we'll focus on creating the MapXXX.rxdata file
+  async registerMapInInfos(projectPath: string, mapId: number, name: string): Promise<void> {
+    const mapInfosPath = path.join(projectPath, 'Data', 'MapInfos.rxdata');
+    return new Promise((resolve, reject) => {
+      const rubyProcess = spawn('ruby', [
+        this.rubyScriptPath,
+        'update_map_infos',
+        mapInfosPath,
+        mapId.toString(),
+        name
+      ]);
+
+      let errorOutput = '';
+      rubyProcess.stderr.on('data', (data) => {
+        errorOutput += data.toString();
+      });
+
+      rubyProcess.on('error', (err: any) => {
+        reject(new Error(`Failed to spawn Ruby process: ${err.message}`));
+      });
+
+      rubyProcess.on('close', (code) => {
+        if (code === 0) {
+          resolve();
+        } else {
+          reject(new Error(`Ruby process exited with code ${code}. Error: ${errorOutput}`));
+        }
+      });
+    });
+  }
+
+  compileMapSpec(mapId: number, spec: MapSpec): MapData {
+    const width = Math.max(1, spec.width);
+    const height = Math.max(1, spec.height);
+    const waterTileId = spec.waterTileId ?? spec.groundTileId;
+
+    const layers: number[][][] = [];
+    for (let z = 0; z < 3; z += 1) {
+      const layer: number[][] = [];
+      for (let y = 0; y < height; y += 1) {
+        const row: number[] = [];
+        for (let x = 0; x < width; x += 1) {
+          row.push(z === 0 ? spec.groundTileId : 0);
+        }
+        layer.push(row);
+      }
+      layers.push(layer);
+    }
+
+    if (spec.waterRegions) {
+      for (const region of spec.waterRegions) {
+        const maxX = Math.min(width - 1, region.x + region.width - 1);
+        const maxY = Math.min(height - 1, region.y + region.height - 1);
+        for (let y = region.y; y <= maxY; y += 1) {
+          for (let x = region.x; x <= maxX; x += 1) {
+            if (x >= 0 && y >= 0) {
+              layers[0][y][x] = waterTileId;
+            }
+          }
+        }
+      }
+    }
+
+    const events: MapEventSpec[] = spec.events ? [...spec.events] : [];
+
+    return {
+      id: mapId,
+      name: spec.name,
+      width,
+      height,
+      tilesetId: spec.tilesetId,
+      layers,
+      events
+    };
   }
 }

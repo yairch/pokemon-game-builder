@@ -52,6 +52,43 @@ const App: React.FC = () => {
     }
   };
 
+  const handleGenerateMap = async () => {
+    const userMessage: Message = { role: 'user', content: 'Generate Map (POC)' };
+    setMessages((prev) => [...prev, userMessage]);
+    setIsLoading(true);
+
+    try {
+      const spec = await bridge.invoke('get-stub-map-spec');
+      const result = await bridge.invoke('compile-map-spec', {
+        projectPath,
+        spec
+      });
+
+      if (result.success) {
+        setMessages((prev) => [
+          ...prev,
+          { role: 'assistant', content: `POC map generated as Map${result.mapId.toString().padStart(3, '0')}.rxdata.` }
+        ]);
+        if (result.mapData) {
+          setCurrentMap(result.mapData);
+        }
+      } else {
+        setMessages((prev) => [
+          ...prev,
+          { role: 'assistant', content: `Error: ${result.error || 'Failed to generate map.'}` }
+        ]);
+      }
+    } catch (error: any) {
+      console.error('Error generating POC map:', error);
+      setMessages((prev) => [
+        ...prev,
+        { role: 'assistant', content: 'Error: Failed to generate map. Please try again.' }
+      ]);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const handleSaveApiKey = async (newKey: string) => {
     const success = await bridge.invoke('set-api-key', newKey);
     if (success) {
@@ -103,6 +140,7 @@ const App: React.FC = () => {
           <ChatInterface
             messages={messages}
             onSendMessage={handleSendMessage}
+            onGenerateMap={handleGenerateMap}
             isLoading={isLoading}
             hasApiKey={hasApiKey}
           />

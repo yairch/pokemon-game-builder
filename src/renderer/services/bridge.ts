@@ -79,6 +79,18 @@ export const bridge = {
           const res = await fetch(`${API_BASE}/debug-list-models`);
           return res.json();
         }
+        case 'get-stub-map-spec': {
+          const res = await fetch(`${API_BASE}/stub/map-spec`);
+          return res.json();
+        }
+        case 'compile-map-spec': {
+          const res = await fetch(`${API_BASE}/compile-map-spec`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(data),
+          });
+          return res.json();
+        }
         case 'ping': {
           const res = await fetch(`${API_BASE}/ping`);
           return res.json();

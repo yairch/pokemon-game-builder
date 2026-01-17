@@ -147,7 +147,7 @@ def create_map(file_path, map_data_json)
   map.tileset_id = data['tilesetId']
   
   # Fill map data
-  layers = data['layers']
+  layers = data['layers'] || data['data'] || []
   (0...3).each do |z|
     (0...map.height).each do |y|
       (0...map.width).each do |x|
@@ -156,7 +156,15 @@ def create_map(file_path, map_data_json)
     end
   end
   
-  # TODO: Add events
+  # Add events (minimal placeholders)
+  events = {}
+  (data['events'] || []).each_with_index do |event_data, index|
+    event = RPG::Event.new(event_data['x'], event_data['y'])
+    event.id = index + 1
+    event.name = event_data['name'] || "Event#{event.id}"
+    events[event.id] = event
+  end
+  map.events = events
   
   File.open(file_path, 'wb') do |f|
     Marshal.dump(map, f)
@@ -164,11 +172,40 @@ def create_map(file_path, map_data_json)
   puts "Map created successfully at #{file_path}"
 end
 
+def update_map_infos(file_path, map_id, name)
+  map_infos = {}
+  if File.exist?(file_path) && File.size?(file_path)
+    File.open(file_path, 'rb') do |f|
+      map_infos = Marshal.load(f) || {}
+    end
+  end
+
+  map_id = map_id.to_i
+  max_order = map_infos.values.map { |info| info.order }.compact.max || 0
+
+  info = map_infos[map_id] || RPG::MapInfo.new
+  info.name = name
+  info.parent_id = 0 if info.parent_id.nil?
+  info.order = max_order + 1 if info.order.nil?
+  info.expanded = true if info.expanded.nil?
+  info.scroll_x = 0 if info.scroll_x.nil?
+  info.scroll_y = 0 if info.scroll_y.nil?
+
+  map_infos[map_id] = info
+
+  File.open(file_path, 'wb') do |f|
+    Marshal.dump(map_infos, f)
+  end
+  puts "MapInfos updated with map #{map_id}"
+end
+
 if __FILE__ == $0
   command = ARGV[0]
   case command
   when 'create_map'
     create_map(ARGV[1], ARGV[2])
+  when 'update_map_infos'
+    update_map_infos(ARGV[1], ARGV[2], ARGV[3])
   else
     puts "Unknown command: #{command}"
   end

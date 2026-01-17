@@ -5,8 +5,26 @@ export interface MapData {
   width: number;
   height: number;
   tilesetId: number;
-  data: number[][][]; // [layer][y][x]
-  events: any[];
+  layers: number[][][]; // [layer][y][x]
+  events: MapEventSpec[];
+}
+
+export interface MapEventSpec {
+  type: 'npc' | 'item';
+  x: number;
+  y: number;
+  name: string;
+}
+
+export interface MapSpec {
+  name: string;
+  width: number;
+  height: number;
+  tilesetId: number;
+  groundTileId: number;
+  waterTileId?: number;
+  waterRegions?: Array<{ x: number; y: number; width: number; height: number }>;
+  events?: MapEventSpec[];
 }
 
 export interface ChatResponse {

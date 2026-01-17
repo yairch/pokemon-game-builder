@@ -8,12 +8,13 @@ interface Message {
 
 interface ChatInterfaceProps {
   onSendMessage: (message: string) => void;
+  onGenerateMap: () => void;
   messages: Message[];
   isLoading: boolean;
   hasApiKey: boolean | null;
 }
 
-const ChatInterface: React.FC<ChatInterfaceProps> = ({ onSendMessage, messages, isLoading, hasApiKey }) => {
+const ChatInterface: React.FC<ChatInterfaceProps> = ({ onSendMessage, onGenerateMap, messages, isLoading, hasApiKey }) => {
   const [input, setInput] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -92,6 +93,14 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ onSendMessage, messages, 
             disabled={!input.trim()}
           >
             <Send size={18} className={isLoading ? "animate-pulse" : ""} />
+          </button>
+          <button
+            type="button"
+            onClick={onGenerateMap}
+            className="px-3 py-2 bg-emerald-600 text-white rounded hover:bg-emerald-700 disabled:opacity-50"
+            disabled={isLoading}
+          >
+            Generate Map (POC)
           </button>
         </div>
       </form>

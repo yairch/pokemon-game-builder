@@ -3,6 +3,7 @@ import { IAIService, AIProvider } from './ai-service-base';
 import { AIServiceFactory } from './ai-service-factory';
 import { ProjectService } from './project-service';
 import { MapGenerator } from './map-generator';
+import { MapSpec } from '../shared/types';
 import * as path from 'path';
 import * as fs from 'fs-extra';
 import express from 'express';
@@ -145,6 +146,16 @@ api.get('/api/ping', async (req, res) => {
   res.json(result);
 });
 
+api.get('/api/stub/map-spec', (req, res) => {
+  res.json(getStubMapSpec());
+});
+
+api.post('/api/compile-map-spec', async (req, res) => {
+  const { projectPath, spec } = req.body;
+  const result = await handleCompileMapSpec(projectPath, spec);
+  res.json(result);
+});
+
 api.get('/api/debug-list-models', async (req, res) => {
   if (!aiService) {
     res.json({ error: 'No API key configured' });
@@ -261,6 +272,53 @@ async function handleAIChat(message: string, projectPath: string) {
   }
 }
 
+function getStubMapSpec(): MapSpec {
+  // RPG Maker XP tile ID ranges:
+  // 0 = empty/transparent
+  // 48-383 = autotiles (7 slots × 48 patterns each)
+  // 384+ = regular tileset tiles
+  //
+  // For Essentials outdoor tileset (id 1):
+  // - Autotile 0 (48-95): water
+  // - Autotile 1 (96-143): grass
+  // - Regular tiles start at 384
+  return {
+    name: 'POC Meadow',
+    width: 25,
+    height: 18,
+    tilesetId: 1,
+    groundTileId: 384,  // First regular tileset tile (grass in Essentials outdoor)
+    waterTileId: 48,    // Water autotile base
+    waterRegions: [{ x: 8, y: 6, width: 5, height: 4 }],
+    events: [{ type: 'npc', x: 12, y: 10, name: 'Greeter' }]
+  };
+}
+
+async function handleCompileMapSpec(projectPath: string, spec: MapSpec) {
+  if (!projectPath) {
+    return { success: false, error: 'Please select a Pokemon Essentials project first.' };
+  }
+
+  const projectService = new ProjectService(projectPath);
+  if (!projectService.isValidProject()) {
+    return { success: false, error: 'The selected directory does not appear to be a valid Pokemon Essentials project.' };
+  }
+
+  if (!spec || !spec.name) {
+    return { success: false, error: 'Invalid map spec.' };
+  }
+
+  try {
+    const nextId = await projectService.getNextMapId();
+    const mapData = mapGenerator.compileMapSpec(nextId, spec);
+    await mapGenerator.generateMapFile(projectPath, nextId, mapData);
+    await mapGenerator.registerMapInInfos(projectPath, nextId, mapData.name);
+    return { success: true, mapId: nextId, mapData };
+  } catch (error: any) {
+    return { success: false, error: error.message || 'Failed to compile map spec.' };
+  }
+}
+
 // --- Traditional IPC Handlers (keeping them for backwards compatibility/internal use) ---
 
 ipcMain.handle('get-api-key', () => {
@@ -310,6 +368,14 @@ ipcMain.handle('init-project', async (event, projectPath) => {
 
 ipcMain.handle('ai-chat', async (event, { message, projectPath }) => {
   return handleAIChat(message, projectPath);
+});
+
+ipcMain.handle('get-stub-map-spec', async () => {
+  return getStubMapSpec();
+});
+
+ipcMain.handle('compile-map-spec', async (event, { projectPath, spec }) => {
+  return handleCompileMapSpec(projectPath, spec);
 });
 
 ipcMain.handle('open-external-url', async (event, url) => {
