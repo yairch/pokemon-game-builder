@@ -2,7 +2,15 @@ import { spawn } from 'child_process';
 import * as path from 'path';
 import * as fs from 'fs-extra';
 import { app } from 'electron';
-import { MapData, MapSpec, MapEventSpec } from '../shared/types';
+import {
+  MapData,
+  MapSpec,
+  MapEventSpec,
+  MapReadData,
+  MapInfosReadData,
+  TilesetData,
+  SystemReadData
+} from '../shared/types';
 
 export class MapGenerator {
   private rubyScriptPath: string;
@@ -97,6 +105,37 @@ export class MapGenerator {
     });
   }
 
+  async cloneMapFile(projectPath: string, sourceMapId: number, targetMapId: number): Promise<void> {
+    const sourcePath = path.join(projectPath, 'Data', `Map${sourceMapId.toString().padStart(3, '0')}.rxdata`);
+    const targetPath = path.join(projectPath, 'Data', `Map${targetMapId.toString().padStart(3, '0')}.rxdata`);
+
+    return new Promise((resolve, reject) => {
+      const rubyProcess = spawn('ruby', [
+        this.rubyScriptPath,
+        'clone_map',
+        sourcePath,
+        targetPath
+      ]);
+
+      let errorOutput = '';
+      rubyProcess.stderr.on('data', (data) => {
+        errorOutput += data.toString();
+      });
+
+      rubyProcess.on('error', (err: any) => {
+        reject(new Error(`Failed to spawn Ruby process: ${err.message}`));
+      });
+
+      rubyProcess.on('close', (code) => {
+        if (code === 0) {
+          resolve();
+        } else {
+          reject(new Error(`Ruby process exited with code ${code}. Error: ${errorOutput}`));
+        }
+      });
+    });
+  }
+
   compileMapSpec(mapId: number, spec: MapSpec): MapData {
     const width = Math.max(1, spec.width);
     const height = Math.max(1, spec.height);
@@ -140,5 +179,71 @@ export class MapGenerator {
       layers,
       events
     };
+  }
+
+  // ============================================================
+  // READ METHODS - Read existing project data via Ruby bridge
+  // ============================================================
+
+  private runRubyReadCommand<T>(command: string, filePath: string): Promise<T> {
+    return new Promise((resolve, reject) => {
+      const rubyProcess = spawn('ruby', [this.rubyScriptPath, command, filePath]);
+
+      let stdout = '';
+      let stderr = '';
+
+      rubyProcess.stdout.on('data', (data) => {
+        stdout += data.toString();
+      });
+
+      rubyProcess.stderr.on('data', (data) => {
+        stderr += data.toString();
+      });
+
+      rubyProcess.on('error', (err: any) => {
+        if (err.code === 'ENOENT') {
+          reject(new Error('Ruby is not installed or not in PATH.'));
+        } else {
+          reject(new Error(`Failed to spawn Ruby process: ${err.message}`));
+        }
+      });
+
+      rubyProcess.on('close', (code) => {
+        if (code === 0 && stdout.trim()) {
+          try {
+            const result = JSON.parse(stdout.trim());
+            if (result.error) {
+              reject(new Error(result.error));
+            } else {
+              resolve(result as T);
+            }
+          } catch (parseErr: any) {
+            reject(new Error(`Failed to parse Ruby output: ${parseErr.message}\nOutput: ${stdout}`));
+          }
+        } else {
+          reject(new Error(`Ruby process exited with code ${code}. Error: ${stderr}`));
+        }
+      });
+    });
+  }
+
+  async readMap(projectPath: string, mapId: number): Promise<MapReadData> {
+    const mapFilePath = path.join(projectPath, 'Data', `Map${mapId.toString().padStart(3, '0')}.rxdata`);
+    return this.runRubyReadCommand<MapReadData>('read_map', mapFilePath);
+  }
+
+  async readMapInfos(projectPath: string): Promise<MapInfosReadData> {
+    const mapInfosPath = path.join(projectPath, 'Data', 'MapInfos.rxdata');
+    return this.runRubyReadCommand<MapInfosReadData>('read_map_infos', mapInfosPath);
+  }
+
+  async readTilesets(projectPath: string): Promise<TilesetData[]> {
+    const tilesetsPath = path.join(projectPath, 'Data', 'Tilesets.rxdata');
+    return this.runRubyReadCommand<TilesetData[]>('read_tilesets', tilesetsPath);
+  }
+
+  async readSystem(projectPath: string): Promise<SystemReadData> {
+    const systemPath = path.join(projectPath, 'Data', 'System.rxdata');
+    return this.runRubyReadCommand<SystemReadData>('read_system', systemPath);
   }
 }

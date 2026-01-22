@@ -156,6 +156,38 @@ api.post('/api/compile-map-spec', async (req, res) => {
   res.json(result);
 });
 
+// --- Read Project Data Endpoints ---
+api.get('/api/read-map/:mapId', async (req, res) => {
+  const projectPath = req.query.projectPath as string;
+  const mapId = parseInt(req.params.mapId);
+  const result = await handleReadMap(projectPath, mapId);
+  res.json(result);
+});
+
+api.get('/api/read-map-infos', async (req, res) => {
+  const projectPath = req.query.projectPath as string;
+  const result = await handleReadMapInfos(projectPath);
+  res.json(result);
+});
+
+api.get('/api/read-tilesets', async (req, res) => {
+  const projectPath = req.query.projectPath as string;
+  const result = await handleReadTilesets(projectPath);
+  res.json(result);
+});
+
+api.get('/api/read-system', async (req, res) => {
+  const projectPath = req.query.projectPath as string;
+  const result = await handleReadSystem(projectPath);
+  res.json(result);
+});
+
+api.get('/api/read-project-context', async (req, res) => {
+  const projectPath = req.query.projectPath as string;
+  const result = await handleReadProjectContext(projectPath);
+  res.json(result);
+});
+
 api.get('/api/debug-list-models', async (req, res) => {
   if (!aiService) {
     res.json({ error: 'No API key configured' });
@@ -282,15 +314,17 @@ function getStubMapSpec(): MapSpec {
   // - Autotile 0 (48-95): water
   // - Autotile 1 (96-143): grass
   // - Regular tiles start at 384
+  //
+  // Using 0 (empty) for now to ensure map structure is valid
   return {
     name: 'POC Meadow',
-    width: 25,
-    height: 18,
+    width: 20,
+    height: 15,
     tilesetId: 1,
-    groundTileId: 384,  // First regular tileset tile (grass in Essentials outdoor)
-    waterTileId: 48,    // Water autotile base
-    waterRegions: [{ x: 8, y: 6, width: 5, height: 4 }],
-    events: [{ type: 'npc', x: 12, y: 10, name: 'Greeter' }]
+    groundTileId: 0,    // Empty/transparent for safety
+    waterTileId: 0,
+    waterRegions: [],   // No water regions for now
+    events: []          // No events for now - they may cause crashes if not fully initialized
   };
 }
 
@@ -311,11 +345,110 @@ async function handleCompileMapSpec(projectPath: string, spec: MapSpec) {
   try {
     const nextId = await projectService.getNextMapId();
     const mapData = mapGenerator.compileMapSpec(nextId, spec);
-    await mapGenerator.generateMapFile(projectPath, nextId, mapData);
+    const mapFiles = await projectService.getMapList();
+    const mapIds = mapFiles
+      .map((file) => parseInt(file.match(/\d+/)?.[0] || '0', 10))
+      .filter((id) => id > 0)
+      .sort((a, b) => a - b);
+
+    if (mapIds.length > 0) {
+      const templateMapId = mapIds[0];
+      await mapGenerator.cloneMapFile(projectPath, templateMapId, nextId);
+    } else {
+      await mapGenerator.generateMapFile(projectPath, nextId, mapData);
+    }
     await mapGenerator.registerMapInInfos(projectPath, nextId, mapData.name);
     return { success: true, mapId: nextId, mapData };
   } catch (error: any) {
     return { success: false, error: error.message || 'Failed to compile map spec.' };
+  }
+}
+
+// --- Read Project Data Handlers ---
+
+async function handleReadMap(projectPath: string, mapId: number) {
+  if (!projectPath) {
+    return { success: false, error: 'Project path is required.' };
+  }
+  if (!mapId || mapId < 1) {
+    return { success: false, error: 'Valid map ID is required.' };
+  }
+
+  try {
+    const data = await mapGenerator.readMap(projectPath, mapId);
+    return { success: true, data };
+  } catch (error: any) {
+    return { success: false, error: error.message || 'Failed to read map.' };
+  }
+}
+
+async function handleReadMapInfos(projectPath: string) {
+  if (!projectPath) {
+    return { success: false, error: 'Project path is required.' };
+  }
+
+  try {
+    const data = await mapGenerator.readMapInfos(projectPath);
+    return { success: true, data };
+  } catch (error: any) {
+    return { success: false, error: error.message || 'Failed to read map infos.' };
+  }
+}
+
+async function handleReadTilesets(projectPath: string) {
+  if (!projectPath) {
+    return { success: false, error: 'Project path is required.' };
+  }
+
+  try {
+    const data = await mapGenerator.readTilesets(projectPath);
+    return { success: true, data };
+  } catch (error: any) {
+    return { success: false, error: error.message || 'Failed to read tilesets.' };
+  }
+}
+
+async function handleReadSystem(projectPath: string) {
+  if (!projectPath) {
+    return { success: false, error: 'Project path is required.' };
+  }
+
+  try {
+    const data = await mapGenerator.readSystem(projectPath);
+    return { success: true, data };
+  } catch (error: any) {
+    return { success: false, error: error.message || 'Failed to read system data.' };
+  }
+}
+
+async function handleReadProjectContext(projectPath: string) {
+  if (!projectPath) {
+    return { success: false, error: 'Project path is required.' };
+  }
+
+  const projectService = new ProjectService(projectPath);
+  if (!projectService.isValidProject()) {
+    return { success: false, error: 'The selected directory does not appear to be a valid Pokemon Essentials project.' };
+  }
+
+  try {
+    const [mapInfos, tilesets, system] = await Promise.all([
+      mapGenerator.readMapInfos(projectPath).catch(() => ({})),
+      mapGenerator.readTilesets(projectPath).catch(() => []),
+      mapGenerator.readSystem(projectPath).catch(() => null)
+    ]);
+
+    return {
+      success: true,
+      data: {
+        projectPath,
+        mapInfos,
+        tilesets,
+        system
+      }
+    };
+  } catch (error: any) {
+    return { success: false, error: error.message || 'Failed to read project context.' };
   }
 }
 
@@ -376,6 +509,27 @@ ipcMain.handle('get-stub-map-spec', async () => {
 
 ipcMain.handle('compile-map-spec', async (event, { projectPath, spec }) => {
   return handleCompileMapSpec(projectPath, spec);
+});
+
+// --- Read Project Data IPC Handlers ---
+ipcMain.handle('read-map', async (event, { projectPath, mapId }) => {
+  return handleReadMap(projectPath, mapId);
+});
+
+ipcMain.handle('read-map-infos', async (event, { projectPath }) => {
+  return handleReadMapInfos(projectPath);
+});
+
+ipcMain.handle('read-tilesets', async (event, { projectPath }) => {
+  return handleReadTilesets(projectPath);
+});
+
+ipcMain.handle('read-system', async (event, { projectPath }) => {
+  return handleReadSystem(projectPath);
+});
+
+ipcMain.handle('read-project-context', async (event, { projectPath }) => {
+  return handleReadProjectContext(projectPath);
 });
 
 ipcMain.handle('open-external-url', async (event, url) => {

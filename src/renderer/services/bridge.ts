@@ -91,6 +91,31 @@ export const bridge = {
           });
           return res.json();
         }
+        case 'read-map': {
+          const { projectPath, mapId } = data;
+          const res = await fetch(`${API_BASE}/read-map/${mapId}?projectPath=${encodeURIComponent(projectPath)}`);
+          return res.json();
+        }
+        case 'read-map-infos': {
+          const { projectPath } = data;
+          const res = await fetch(`${API_BASE}/read-map-infos?projectPath=${encodeURIComponent(projectPath)}`);
+          return res.json();
+        }
+        case 'read-tilesets': {
+          const { projectPath } = data;
+          const res = await fetch(`${API_BASE}/read-tilesets?projectPath=${encodeURIComponent(projectPath)}`);
+          return res.json();
+        }
+        case 'read-system': {
+          const { projectPath } = data;
+          const res = await fetch(`${API_BASE}/read-system?projectPath=${encodeURIComponent(projectPath)}`);
+          return res.json();
+        }
+        case 'read-project-context': {
+          const { projectPath } = data;
+          const res = await fetch(`${API_BASE}/read-project-context?projectPath=${encodeURIComponent(projectPath)}`);
+          return res.json();
+        }
         case 'ping': {
           const res = await fetch(`${API_BASE}/ping`);
           return res.json();
