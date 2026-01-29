@@ -379,16 +379,7 @@ async function handleCompileMapSpec(projectPath: string, spec: MapSpec) {
       }
 
       if (templateMapData) {
-        const safeGround = findFirstNonZeroTile(templateMapData.layers) ?? 0;
-        const safeSpec: MapSpec = {
-          ...spec,
-          tilesetId: templateMapData.tilesetId,
-          groundTileId: safeGround,
-          waterTileId: safeGround,
-          waterRegions: [],
-          events: []
-        };
-        mapData = mapGenerator.compileMapSpec(nextId, safeSpec);
+        mapData = createPatternedMapDataFromTemplate(nextId, spec, templateMapData);
       }
 
       await mapGenerator.cloneMapFile(projectPath, templateMapId, nextId);
@@ -417,6 +408,59 @@ function findFirstNonZeroTile(layers: number[][][]): number | null {
     }
   }
   return null;
+}
+
+function createPatternedMapDataFromTemplate(
+  mapId: number,
+  spec: MapSpec,
+  templateMap: { tilesetId: number; width: number; height: number; layers: number[][][] }
+) {
+  const layers = cloneLayers(templateMap.layers);
+  const [baseTile, accentTile] = findTopTwoTiles(layers[0]);
+
+  const width = templateMap.width;
+  const height = templateMap.height;
+  const startX = Math.floor(width * 0.25);
+  const startY = Math.floor(height * 0.25);
+  const endX = Math.floor(width * 0.75);
+  const endY = Math.floor(height * 0.75);
+
+  for (let y = startY; y < endY; y += 1) {
+    for (let x = startX; x < endX; x += 1) {
+      const isBorder = x === startX || y === startY || x === endX - 1 || y === endY - 1;
+      const isStripe = (x + y) % 2 === 0;
+      layers[0][y][x] = isBorder ? accentTile : isStripe ? accentTile : baseTile;
+    }
+  }
+
+  return {
+    id: mapId,
+    name: spec.name,
+    width,
+    height,
+    tilesetId: templateMap.tilesetId,
+    layers,
+    events: []
+  };
+}
+
+function cloneLayers(layers: number[][][]): number[][][] {
+  return layers.map((layer) => layer.map((row) => [...row]));
+}
+
+function findTopTwoTiles(layer: number[][]): [number, number] {
+  const counts = new Map<number, number>();
+  for (const row of layer) {
+    for (const tile of row) {
+      if (!tile || tile === 0) continue;
+      counts.set(tile, (counts.get(tile) || 0) + 1);
+    }
+  }
+
+  const sorted = [...counts.entries()].sort((a, b) => b[1] - a[1]);
+  const base = sorted[0]?.[0] ?? 0;
+  const accent = sorted[1]?.[0] ?? base;
+  return [base, accent];
 }
 
 async function handleReadMap(projectPath: string, mapId: number) {
