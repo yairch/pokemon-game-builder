@@ -315,16 +315,17 @@ function getStubMapSpec(): MapSpec {
   // - Autotile 1 (96-143): grass
   // - Regular tiles start at 384
   //
-  // Using 0 (empty) for now to ensure map structure is valid
+  // Now that maps are cloned safely, we can use real tiles again
   return {
     name: 'POC Meadow',
     width: 20,
     height: 15,
     tilesetId: 1,
-    groundTileId: 0,    // Empty/transparent for safety
-    waterTileId: 0,
-    waterRegions: [],   // No water regions for now
-    events: []          // No events for now - they may cause crashes if not fully initialized
+    groundTileId: 384,  // First regular tileset tile (grass in Essentials outdoor)
+    waterTileId: 48,    // Water autotile base
+    waterRegions: [{ x: 6, y: 6, width: 4, height: 3 }],
+    events: [],         // Keep events off until tiles are confirmed stable
+    patchTiles: true
   };
 }
 
@@ -344,7 +345,7 @@ async function handleCompileMapSpec(projectPath: string, spec: MapSpec) {
 
   try {
     const nextId = await projectService.getNextMapId();
-    const mapData = mapGenerator.compileMapSpec(nextId, spec);
+    let mapData = mapGenerator.compileMapSpec(nextId, spec);
     const mapFiles = await projectService.getMapList();
     const mapIds = mapFiles
       .map((file) => parseInt(file.match(/\d+/)?.[0] || '0', 10))
@@ -352,8 +353,39 @@ async function handleCompileMapSpec(projectPath: string, spec: MapSpec) {
       .sort((a, b) => a - b);
 
     if (mapIds.length > 0) {
-      const templateMapId = mapIds[0];
+      let templateMapId = mapIds[0];
+      let templateMapData: { tilesetId: number; layers: number[][][] } | null = null;
+
+      for (const candidateId of mapIds) {
+        try {
+          const candidateMap = await mapGenerator.readMap(projectPath, candidateId);
+          if (candidateMap.tilesetId === mapData.tilesetId) {
+            templateMapId = candidateId;
+            templateMapData = candidateMap;
+            break;
+          }
+        } catch {
+          // Ignore read failures and keep searching
+        }
+      }
+
+      if (templateMapData) {
+        const safeGround = findFirstNonZeroTile(templateMapData.layers) ?? 0;
+        const safeSpec: MapSpec = {
+          ...spec,
+          tilesetId: templateMapData.tilesetId,
+          groundTileId: safeGround,
+          waterTileId: safeGround,
+          waterRegions: [],
+          events: []
+        };
+        mapData = mapGenerator.compileMapSpec(nextId, safeSpec);
+      }
+
       await mapGenerator.cloneMapFile(projectPath, templateMapId, nextId);
+      if (spec.patchTiles !== false) {
+        await mapGenerator.patchMapData(projectPath, nextId, mapData);
+      }
     } else {
       await mapGenerator.generateMapFile(projectPath, nextId, mapData);
     }
@@ -365,6 +397,18 @@ async function handleCompileMapSpec(projectPath: string, spec: MapSpec) {
 }
 
 // --- Read Project Data Handlers ---
+
+function findFirstNonZeroTile(layers: number[][][]): number | null {
+  if (!layers || layers.length === 0) return null;
+  for (const layer of layers) {
+    for (const row of layer) {
+      for (const tile of row) {
+        if (tile && tile > 0) return tile;
+      }
+    }
+  }
+  return null;
+}
 
 async function handleReadMap(projectPath: string, mapId: number) {
   if (!projectPath) {

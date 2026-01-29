@@ -1,5 +1,6 @@
 require 'json'
 require 'fileutils'
+require 'base64'
 
 # Define RPG Maker XP classes so Marshal can load them
 module RPG
@@ -64,8 +65,8 @@ module RPG
       attr_accessor :move_route, :walk_anime, :step_anime, :direction_fix, :through
       attr_accessor :always_on_top, :trigger, :list
       def initialize
-        @condition = RPG::Event::Condition.new
-        @graphic = RPG::Event::Graphic.new
+        @condition = RPG::Event::Page::Condition.new
+        @graphic = RPG::Event::Page::Graphic.new
         @move_type = 0
         @move_speed = 3
         @move_frequency = 3
@@ -78,34 +79,34 @@ module RPG
         @trigger = 0
         @list = [RPG::EventCommand.new]
       end
-    end
 
-    class Condition
-      attr_accessor :switch1_valid, :switch2_valid, :variable_valid, :self_switch_valid
-      attr_accessor :switch1_id, :switch2_id, :variable_id, :variable_value, :self_switch_ch
-      def initialize
-        @switch1_valid = false
-        @switch2_valid = false
-        @variable_valid = false
-        @self_switch_valid = false
-        @switch1_id = 1
-        @switch2_id = 1
-        @variable_id = 1
-        @variable_value = 0
-        @self_switch_ch = "A"
+      class Condition
+        attr_accessor :switch1_valid, :switch2_valid, :variable_valid, :self_switch_valid
+        attr_accessor :switch1_id, :switch2_id, :variable_id, :variable_value, :self_switch_ch
+        def initialize
+          @switch1_valid = false
+          @switch2_valid = false
+          @variable_valid = false
+          @self_switch_valid = false
+          @switch1_id = 1
+          @switch2_id = 1
+          @variable_id = 1
+          @variable_value = 0
+          @self_switch_ch = "A"
+        end
       end
-    end
 
-    class Graphic
-      attr_accessor :tile_id, :character_name, :character_hue, :direction, :pattern, :opacity, :blend_type
-      def initialize
-        @tile_id = 0
-        @character_name = ""
-        @character_hue = 0
-        @direction = 2
-        @pattern = 0
-        @opacity = 255
-        @blend_type = 0
+      class Graphic
+        attr_accessor :tile_id, :character_name, :character_hue, :direction, :pattern, :opacity, :blend_type
+        def initialize
+          @tile_id = 0
+          @character_name = ""
+          @character_hue = 0
+          @direction = 2
+          @pattern = 0
+          @opacity = 255
+          @blend_type = 0
+        end
       end
     end
   end
@@ -266,6 +267,55 @@ def clone_map(source_path, dest_path)
 
   FileUtils.cp(source_path, dest_path)
   puts "Map cloned from #{source_path} to #{dest_path}"
+end
+
+def patch_map_data(file_path, map_data_json)
+  unless File.exist?(file_path)
+    puts JSON.generate({ error: "Map file not found: #{file_path}" })
+    return
+  end
+
+  data = JSON.parse(map_data_json)
+  map = File.open(file_path, 'rb') { |f| Marshal.load(f) }
+
+  # Remove events and encounters to avoid serialization issues
+  map.events = {}
+  map.encounter_list = []
+
+  layers = data['layers'] || data['data'] || []
+  max_width = [map.width, layers[0]&.first&.length || 0].min
+  max_height = [map.height, layers[0]&.length || 0].min
+
+  (0...3).each do |z|
+    (0...max_height).each do |y|
+      (0...max_width).each do |x|
+        tile = layers[z] && layers[z][y] ? layers[z][y][x] : nil
+        next if tile.nil?
+        map.data[x, y, z] = tile
+      end
+    end
+  end
+
+  File.open(file_path, 'wb') do |f|
+    Marshal.dump(map, f)
+  end
+  puts "Map data patched for #{file_path}"
+end
+
+def dump_map_table(file_path)
+  unless File.exist?(file_path)
+    puts JSON.generate({ error: "Map file not found: #{file_path}" })
+    return
+  end
+
+  map = File.open(file_path, 'rb') { |f| Marshal.load(f) }
+  if map.nil? || map.data.nil?
+    puts JSON.generate({ error: "Map data not found in: #{file_path}" })
+    return
+  end
+
+  raw = map.data._dump(0)
+  puts Base64.strict_encode64(raw)
 end
 
 def find_template_map(data_dir)
@@ -529,6 +579,10 @@ if __FILE__ == $0
     update_map_infos(ARGV[1], ARGV[2], ARGV[3])
   when 'clone_map'
     clone_map(ARGV[1], ARGV[2])
+  when 'patch_map_data'
+    patch_map_data(ARGV[1], ARGV[2])
+  when 'dump_map_table'
+    dump_map_table(ARGV[1])
   when 'read_map'
     read_map(ARGV[1])
   when 'read_map_infos'

@@ -20,6 +20,7 @@ export interface MapSpec {
   waterTileId?: number;
   waterRegions?: Array<{ x: number; y: number; width: number; height: number }>;
   events?: MapEventSpec[];
+  patchTiles?: boolean;
 }
 
 // ============================================================
