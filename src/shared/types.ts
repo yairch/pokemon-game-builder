@@ -134,6 +134,21 @@ export interface TilesetData {
   terrainTags: number[];
 }
 
+export interface TilesetInspectorData {
+  mapName: string;
+  mapId: number;
+  tilesetId: number;
+  tilesetName: string;
+  tilesetImagePath: string;
+  tilesetImageUrl: string;
+  tilesetImageDataUrl: string;
+  autotileImagePaths: string[];
+  autotileImageUrls: string[];
+  autotileImageDataUrls: string[];
+  tileWidth: number;
+  tileHeight: number;
+}
+
 export interface SystemReadData {
   startMapId: number;
   startX: number;

@@ -116,6 +116,11 @@ export const bridge = {
           const res = await fetch(`${API_BASE}/read-project-context?projectPath=${encodeURIComponent(projectPath)}`);
           return res.json();
         }
+        case 'tileset-inspector': {
+          const { projectPath, mapName } = data;
+          const res = await fetch(`${API_BASE}/tileset-inspector?projectPath=${encodeURIComponent(projectPath)}&mapName=${encodeURIComponent(mapName)}`);
+          return res.json();
+        }
         case 'ping': {
           const res = await fetch(`${API_BASE}/ping`);
           return res.json();

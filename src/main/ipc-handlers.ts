@@ -3,8 +3,9 @@ import { IAIService, AIProvider } from './ai-service-base';
 import { AIServiceFactory } from './ai-service-factory';
 import { ProjectService } from './project-service';
 import { MapGenerator } from './map-generator';
-import { MapSpec } from '../shared/types';
+import { MapSpec, TilesetInspectorData } from '../shared/types';
 import * as path from 'path';
+import { pathToFileURL } from 'url';
 import * as fs from 'fs-extra';
 import express from 'express';
 import cors from 'cors';
@@ -185,6 +186,14 @@ api.get('/api/read-system', async (req, res) => {
 api.get('/api/read-project-context', async (req, res) => {
   const projectPath = req.query.projectPath as string;
   const result = await handleReadProjectContext(projectPath);
+  res.json(result);
+});
+
+// --- Tileset Inspector Endpoint ---
+api.get('/api/tileset-inspector', async (req, res) => {
+  const projectPath = req.query.projectPath as string;
+  const mapName = (req.query.mapName as string) || 'Route 2';
+  const result = await handleTilesetInspector(projectPath, mapName);
   res.json(result);
 });
 
@@ -496,6 +505,98 @@ async function handleReadProjectContext(projectPath: string) {
   }
 }
 
+async function handleTilesetInspector(projectPath: string, mapName: string) {
+  if (!projectPath) {
+    return { success: false, error: 'Project path is required.' };
+  }
+
+  try {
+    const mapInfos = await mapGenerator.readMapInfos(projectPath);
+    const mapEntry = Object.values(mapInfos).find(
+      (info) => info.name.toLowerCase() === mapName.toLowerCase()
+    );
+
+    if (!mapEntry) {
+      return { success: false, error: `Map "${mapName}" not found in MapInfos.` };
+    }
+
+    const map = await mapGenerator.readMap(projectPath, mapEntry.id);
+    const tilesets = await mapGenerator.readTilesets(projectPath);
+    const tileset = tilesets.find((t) => t.id === map.tilesetId);
+
+    if (!tileset) {
+      return { success: false, error: `Tileset ${map.tilesetId} not found.` };
+    }
+
+    const tilesetImagePath = resolveTilesetImagePath(projectPath, tileset.tilesetName);
+    const autotileImagePaths = tileset.autotileNames
+      .filter((name) => !!name)
+      .map((name) => resolveAutotileImagePath(projectPath, name));
+
+    const tilesetImageUrl = toFileUrl(tilesetImagePath);
+    const autotileImageUrls = autotileImagePaths.map((p) => toFileUrl(p));
+    const tilesetImageDataUrl = toDataUrl(tilesetImagePath);
+    const autotileImageDataUrls = autotileImagePaths.map((p) => toDataUrl(p));
+
+    const data: TilesetInspectorData = {
+      mapName: mapEntry.name,
+      mapId: mapEntry.id,
+      tilesetId: map.tilesetId,
+      tilesetName: tileset.tilesetName,
+      tilesetImagePath,
+      tilesetImageUrl,
+      tilesetImageDataUrl,
+      autotileImagePaths,
+      autotileImageUrls,
+      autotileImageDataUrls,
+      tileWidth: 32,
+      tileHeight: 32
+    };
+
+    return { success: true, data };
+  } catch (error: any) {
+    return { success: false, error: error.message || 'Failed to load tileset inspector data.' };
+  }
+}
+
+function resolveTilesetImagePath(projectPath: string, tilesetName: string): string {
+  const base = path.join(projectPath, 'Graphics', 'Tilesets', tilesetName);
+  const png = `${base}.png`;
+  const bmp = `${base}.bmp`;
+  if (fs.existsSync(png)) return png;
+  if (fs.existsSync(bmp)) return bmp;
+  return base;
+}
+
+function resolveAutotileImagePath(projectPath: string, autotileName: string): string {
+  const base = path.join(projectPath, 'Graphics', 'Autotiles', autotileName);
+  const png = `${base}.png`;
+  const bmp = `${base}.bmp`;
+  if (fs.existsSync(png)) return png;
+  if (fs.existsSync(bmp)) return bmp;
+  return base;
+}
+
+function toFileUrl(filePath: string): string {
+  try {
+    return pathToFileURL(filePath).toString();
+  } catch {
+    return `file://${filePath.replace(/\\/g, '/')}`;
+  }
+}
+
+function toDataUrl(filePath: string): string {
+  try {
+    if (!fs.existsSync(filePath)) return '';
+    const ext = path.extname(filePath).toLowerCase();
+    const mime = ext === '.bmp' ? 'image/bmp' : 'image/png';
+    const data = fs.readFileSync(filePath);
+    return `data:${mime};base64,${data.toString('base64')}`;
+  } catch {
+    return '';
+  }
+}
+
 // --- Traditional IPC Handlers (keeping them for backwards compatibility/internal use) ---
 
 ipcMain.handle('get-api-key', () => {
@@ -574,6 +675,10 @@ ipcMain.handle('read-system', async (event, { projectPath }) => {
 
 ipcMain.handle('read-project-context', async (event, { projectPath }) => {
   return handleReadProjectContext(projectPath);
+});
+
+ipcMain.handle('tileset-inspector', async (event, { projectPath, mapName }) => {
+  return handleTilesetInspector(projectPath, mapName);
 });
 
 ipcMain.handle('open-external-url', async (event, url) => {
