@@ -496,7 +496,7 @@ const ProjectSelector: React.FC<ProjectSelectorProps> = ({
 
       {tilesetInspector && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[9999] p-4">
-          <div className="bg-white rounded-lg shadow-xl max-w-5xl w-full p-6 flex flex-col max-h-[90vh]">
+          <div className="bg-white rounded-lg shadow-xl max-w-5xl w-full p-6 flex flex-col max-h-[90vh] overflow-hidden">
             <div className="flex justify-between items-center mb-4">
               <div>
                 <h3 className="text-lg font-bold text-gray-800">Tileset IDs</h3>
@@ -507,36 +507,46 @@ const ProjectSelector: React.FC<ProjectSelectorProps> = ({
               <button onClick={() => setTilesetInspector(null)} className="text-gray-400 hover:text-gray-600">✕</button>
             </div>
 
-            <div className="flex-1 overflow-auto border border-gray-200 rounded bg-gray-50 p-2">
-              <div className="relative inline-block">
-                <img
-                  ref={tilesetImageRef}
-                  src={tilesetInspector.tilesetImageDataUrl || tilesetInspector.tilesetImageUrl}
-                  alt="Tileset"
-                  className="block"
-                />
-                <canvas ref={tilesetCanvasRef} className="absolute left-0 top-0 pointer-events-none" />
-              </div>
-            </div>
-
-            {tilesetInspector.autotileImagePaths.length > 0 && (
-              <div className="mt-4">
-                <h4 className="text-xs font-semibold text-gray-700 mb-2">Autotiles</h4>
-                <div className="grid grid-cols-2 md:grid-cols-3 gap-2 text-xs text-gray-600">
-                  {(tilesetInspector.autotileImagePaths || []).map((path, index) => (
-                    <div key={path} className="truncate">
-                      {path}
-                      {tilesetInspector.autotileImageUrls?.[index] && (
-                        <div className="text-[10px] text-gray-400 truncate">{tilesetInspector.autotileImageUrls[index]}</div>
-                      )}
-                      {tilesetInspector.autotileImageDataUrls?.[index] && (
-                        <div className="text-[10px] text-gray-400 truncate">data:// (inline)</div>
-                      )}
-                    </div>
-                  ))}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+              <div className="flex flex-col">
+                <h4 className="text-xs font-semibold text-gray-700 mb-2">Regular Tiles</h4>
+            <div className="flex-1 overflow-auto border border-gray-200 rounded bg-gray-50 p-2 max-h-[60vh]">
+                  <div className="relative inline-block">
+                    <img
+                      ref={tilesetImageRef}
+                      src={tilesetInspector.tilesetImageDataUrl || tilesetInspector.tilesetImageUrl}
+                      alt="Tileset"
+                      className="block max-w-full h-auto"
+                    />
+                    <canvas ref={tilesetCanvasRef} className="absolute left-0 top-0 pointer-events-none" />
+                  </div>
                 </div>
               </div>
-            )}
+
+              <div className="flex flex-col">
+                <h4 className="text-xs font-semibold text-gray-700 mb-2">Autotiles</h4>
+                <div className="flex-1 overflow-auto border border-gray-200 rounded bg-gray-50 p-2 max-h-[60vh]">
+                  {(tilesetInspector.autotileImageDataUrls || []).length > 0 ? (
+                    <div className="grid grid-cols-2 gap-3">
+                      {tilesetInspector.autotileImageDataUrls.map((dataUrl, index) => (
+                        <div key={`${dataUrl}-${index}`} className="bg-white border border-gray-200 rounded p-2">
+                          <img
+                            src={dataUrl || tilesetInspector.autotileImageUrls?.[index]}
+                            alt={`Autotile ${index + 1}`}
+                            className="block w-full h-auto max-h-28 object-contain"
+                          />
+                          <div className="mt-1 text-[10px] text-gray-500 truncate">
+                            {tilesetInspector.autotileImagePaths?.[index] || `Autotile ${index + 1}`}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="text-xs text-gray-500">No autotiles configured.</div>
+                  )}
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       )}
