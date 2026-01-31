@@ -38,6 +38,8 @@ const ProjectSelector: React.FC<ProjectSelectorProps> = ({
   const [tilesetMapName, setTilesetMapName] = useState('Route 2');
   const tilesetCanvasRef = useRef<HTMLCanvasElement>(null);
   const tilesetImageRef = useRef<HTMLImageElement>(null);
+  const [mapTestRunning, setMapTestRunning] = useState(false);
+  const [mapTestResult, setMapTestResult] = useState<{ success: boolean; message: string } | null>(null);
 
   useEffect(() => {
     const fetchProvider = async () => {
@@ -232,6 +234,34 @@ const ProjectSelector: React.FC<ProjectSelectorProps> = ({
       setTilesetInspectorError(e.message || 'Failed to load tileset inspector.');
     } finally {
       setTilesetInspectorLoading(false);
+    }
+  };
+
+  const handleRunMapTest = async (testType: 'path' | 'pond' | 'decor' | 'elevation' | 'all') => {
+    if (!currentPath) {
+      setMapTestResult({ success: false, message: 'Please select a project first.' });
+      return;
+    }
+    setMapTestRunning(true);
+    setMapTestResult(null);
+    try {
+      const result = await bridge.invoke('run-map-test', {
+        projectPath: currentPath,
+        mapName: tilesetMapName,
+        testType
+      });
+      if (result.success) {
+        const debug = result.debug
+          ? ` [base:${result.debug.baseTile}, path:${result.debug.pathTile}, water:${result.debug.waterTile}, decor:${result.debug.decorTile}, elev:${result.debug.elevationTile}, stair:${result.debug.stairTile}]`
+          : '';
+        setMapTestResult({ success: true, message: `Created Map${String(result.mapId).padStart(3, '0')} (${result.mapData.name}).${debug}` });
+      } else {
+        setMapTestResult({ success: false, message: result.error || 'Test failed.' });
+      }
+    } catch (e: any) {
+      setMapTestResult({ success: false, message: e.message || 'Test failed.' });
+    } finally {
+      setMapTestRunning(false);
     }
   };
 
@@ -492,6 +522,60 @@ const ProjectSelector: React.FC<ProjectSelectorProps> = ({
         {tilesetInspectorError && (
           <div className="mt-2 text-xs text-red-600">{tilesetInspectorError}</div>
         )}
+
+        <div className="mt-4">
+          <h4 className="text-xs font-semibold text-gray-700 mb-2">POC Map Tests</h4>
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+            <button
+              onClick={() => handleRunMapTest('path')}
+              disabled={mapTestRunning}
+              className="px-3 py-2 bg-slate-700 text-white text-xs rounded hover:bg-slate-800 disabled:opacity-50"
+            >
+              Path Test
+            </button>
+            <button
+              onClick={() => handleRunMapTest('pond')}
+              disabled={mapTestRunning}
+              className="px-3 py-2 bg-slate-700 text-white text-xs rounded hover:bg-slate-800 disabled:opacity-50"
+            >
+              Pond Test
+            </button>
+            <button
+              onClick={() => handleRunMapTest('decor')}
+              disabled={mapTestRunning}
+              className="px-3 py-2 bg-slate-700 text-white text-xs rounded hover:bg-slate-800 disabled:opacity-50"
+            >
+              Decor Test
+            </button>
+            <button
+              onClick={() => handleRunMapTest('elevation')}
+              disabled={mapTestRunning}
+              className="px-3 py-2 bg-slate-700 text-white text-xs rounded hover:bg-slate-800 disabled:opacity-50"
+            >
+              Elevation Test
+            </button>
+            <button
+              onClick={() => handleRunMapTest('all')}
+              disabled={mapTestRunning}
+              className="px-3 py-2 bg-emerald-600 text-white text-xs rounded hover:bg-emerald-700 disabled:opacity-50"
+            >
+              Run All
+            </button>
+            <button
+              onClick={() => handleRunMapTest('ai')}
+              disabled={mapTestRunning || !hasApiKey}
+              className="px-3 py-2 bg-purple-600 text-white text-xs rounded hover:bg-purple-700 disabled:opacity-50"
+              title={!hasApiKey ? 'AI key required' : 'AI-driven tests'}
+            >
+              Run AI Tests
+            </button>
+          </div>
+          {mapTestResult && (
+            <div className={`mt-2 text-xs ${mapTestResult.success ? 'text-green-600' : 'text-red-600'}`}>
+              {mapTestResult.message}
+            </div>
+          )}
+        </div>
       </div>
 
       {tilesetInspector && (

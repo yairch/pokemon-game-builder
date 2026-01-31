@@ -91,6 +91,14 @@ export const bridge = {
           });
           return res.json();
         }
+        case 'run-map-test': {
+          const res = await fetch(`${API_BASE}/run-map-test`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(data),
+          });
+          return res.json();
+        }
         case 'read-map': {
           const { projectPath, mapId } = data;
           const res = await fetch(`${API_BASE}/read-map/${mapId}?projectPath=${encodeURIComponent(projectPath)}`);
