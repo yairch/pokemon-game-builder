@@ -36,6 +36,7 @@ const ProjectSelector: React.FC<ProjectSelectorProps> = ({
   const [tilesetInspectorError, setTilesetInspectorError] = useState('');
   const [tilesetInspectorLoading, setTilesetInspectorLoading] = useState(false);
   const [tilesetMapName, setTilesetMapName] = useState('Route 2');
+  const [tilesetMapId, setTilesetMapId] = useState<number | null>(null);
   const tilesetCanvasRef = useRef<HTMLCanvasElement>(null);
   const tilesetImageRef = useRef<HTMLImageElement>(null);
   const [mapTestRunning, setMapTestRunning] = useState(false);
@@ -225,6 +226,7 @@ const ProjectSelector: React.FC<ProjectSelectorProps> = ({
       });
       if (result.success) {
         setTilesetInspector(result.data);
+        setTilesetMapId(result.data.mapId);
       } else {
         setTilesetInspector(null);
         setTilesetInspectorError(result.error || 'Failed to load tileset inspector.');
@@ -237,9 +239,13 @@ const ProjectSelector: React.FC<ProjectSelectorProps> = ({
     }
   };
 
-  const handleRunMapTest = async (testType: 'path' | 'pond' | 'decor' | 'elevation' | 'all') => {
+  const handleRunMapTest = async (testType: 'ai' | 'sanity') => {
     if (!currentPath) {
       setMapTestResult({ success: false, message: 'Please select a project first.' });
+      return;
+    }
+    if (!tilesetMapId) {
+      setMapTestResult({ success: false, message: 'Please open Tileset Inspector for a map first.' });
       return;
     }
     setMapTestRunning(true);
@@ -248,13 +254,23 @@ const ProjectSelector: React.FC<ProjectSelectorProps> = ({
       const result = await bridge.invoke('run-map-test', {
         projectPath: currentPath,
         mapName: tilesetMapName,
+        mapId: tilesetMapId ?? undefined,
         testType
       });
       if (result.success) {
-        const debug = result.debug
-          ? ` [base:${result.debug.baseTile}, path:${result.debug.pathTile}, water:${result.debug.waterTile}, decor:${result.debug.decorTile}, elev:${result.debug.elevationTile}, stair:${result.debug.stairTile}]`
+        let debug = '';
+        if (result.debug?.editsCount) {
+          const bounds = result.debug.editsBounds
+            ? ` bounds(${result.debug.editsBounds.minX},${result.debug.editsBounds.minY})-(${result.debug.editsBounds.maxX},${result.debug.editsBounds.maxY})`
+            : '';
+          debug = ` [edits:${result.debug.editsCount}${bounds}]`;
+        } else if (result.debug) {
+          debug = ` [base:${result.debug.baseTile}, path:${result.debug.pathTile}, water:${result.debug.waterTile}, decor:${result.debug.decorTile}, elev:${result.debug.elevationTile}, stair:${result.debug.stairTile}]`;
+        }
+        const sourceInfo = result.sourceMapId
+          ? ` source:${result.sourceMapId} (${result.sourceMapName || 'unknown'})`
           : '';
-        setMapTestResult({ success: true, message: `Created Map${String(result.mapId).padStart(3, '0')} (${result.mapData.name}).${debug}` });
+        setMapTestResult({ success: true, message: `Created Map${String(result.mapId).padStart(3, '0')} (${result.mapData.name}).${debug}${sourceInfo}` });
       } else {
         setMapTestResult({ success: false, message: result.error || 'Test failed.' });
       }
@@ -527,39 +543,11 @@ const ProjectSelector: React.FC<ProjectSelectorProps> = ({
           <h4 className="text-xs font-semibold text-gray-700 mb-2">POC Map Tests</h4>
           <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
             <button
-              onClick={() => handleRunMapTest('path')}
+              onClick={() => handleRunMapTest('sanity')}
               disabled={mapTestRunning}
               className="px-3 py-2 bg-slate-700 text-white text-xs rounded hover:bg-slate-800 disabled:opacity-50"
             >
-              Path Test
-            </button>
-            <button
-              onClick={() => handleRunMapTest('pond')}
-              disabled={mapTestRunning}
-              className="px-3 py-2 bg-slate-700 text-white text-xs rounded hover:bg-slate-800 disabled:opacity-50"
-            >
-              Pond Test
-            </button>
-            <button
-              onClick={() => handleRunMapTest('decor')}
-              disabled={mapTestRunning}
-              className="px-3 py-2 bg-slate-700 text-white text-xs rounded hover:bg-slate-800 disabled:opacity-50"
-            >
-              Decor Test
-            </button>
-            <button
-              onClick={() => handleRunMapTest('elevation')}
-              disabled={mapTestRunning}
-              className="px-3 py-2 bg-slate-700 text-white text-xs rounded hover:bg-slate-800 disabled:opacity-50"
-            >
-              Elevation Test
-            </button>
-            <button
-              onClick={() => handleRunMapTest('all')}
-              disabled={mapTestRunning}
-              className="px-3 py-2 bg-emerald-600 text-white text-xs rounded hover:bg-emerald-700 disabled:opacity-50"
-            >
-              Run All
+              Sanity Test
             </button>
             <button
               onClick={() => handleRunMapTest('ai')}

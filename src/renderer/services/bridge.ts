@@ -2,9 +2,10 @@ const API_BASE = 'http://localhost:3001/api';
 
 export const bridge = {
   invoke: async (channel: string, data?: any): Promise<any> => {
-    // Create a timeout promise (30s for API calls that may try multiple models)
+    const timeoutMs = channel === 'run-map-test' ? 120000 : 30000;
+    // Create a timeout promise (longer for AI map tests)
     const timeoutPromise = new Promise((_, reject) =>
-      setTimeout(() => reject(new Error('Request timed out after 30 seconds.')), 30000)
+      setTimeout(() => reject(new Error(`Request timed out after ${timeoutMs / 1000} seconds.`)), timeoutMs)
     );
 
     const callPromise = (async () => {

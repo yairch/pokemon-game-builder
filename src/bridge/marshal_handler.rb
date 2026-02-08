@@ -177,32 +177,53 @@ module RPG
 end
 
 # Table class used by RPG Maker XP for map data
+# Binary format (20-byte header + data):
+#   4 bytes: dim   (number of dimensions: 1, 2, or 3)
+#   4 bytes: xsize
+#   4 bytes: ysize (1 if dim < 2)
+#   4 bytes: zsize (1 if dim < 3)
+#   4 bytes: total_elements (xsize * ysize * zsize)
+#   N*2 bytes: tile data (unsigned 16-bit LE values)
 class Table
-  def initialize(x, y, z = 1)
+  attr_reader :xsize, :ysize, :zsize
+
+  def initialize(x, y = 1, z = 1)
+    @dim = z > 1 ? 3 : (y > 1 ? 2 : 1)
     @xsize = x
     @ysize = y
     @zsize = z
     @data = Array.new(x * y * z, 0)
   end
-  def [](x, y, z = 0)
+
+  def [](x, y = 0, z = 0)
     @data[x + y * @xsize + z * @xsize * @ysize]
   end
+
   def []=(x, y, z = 0, v)
     @data[x + y * @xsize + z * @xsize * @ysize] = v
   end
+
   def _dump(limit)
-    [@xsize, @ysize, @zsize, @xsize * @ysize * @zsize].pack("VVVV") + @data.pack("v*")
+    [@dim, @xsize, @ysize, @zsize, @xsize * @ysize * @zsize].pack("VVVVV") + @data.pack("v*")
   end
+
   def self._load(obj)
-    x, y, z, size = obj[0, 16].unpack("VVVV")
+    dim, x, y, z, size = obj[0, 20].unpack("VVVVV")
     t = Table.new(x, y, z)
-    t.instance_variable_set(:@data, obj[16..-1].unpack("v*"))
+    t.instance_variable_set(:@dim, dim)
+    t.instance_variable_set(:@data, obj[20..-1].unpack("v*"))
     t
   end
 end
 
-def create_map(file_path, map_data_json)
-  data = JSON.parse(map_data_json)
+def create_map(file_path, map_data_json = nil)
+  # Read JSON from stdin if not provided as argument (for large data)
+  json_string = map_data_json
+  if json_string.nil? || json_string.empty?
+    json_string = STDIN.read
+  end
+  
+  data = JSON.parse(json_string)
   data_dir = File.dirname(file_path)
   template_path = find_template_map(data_dir)
   map = nil
@@ -269,13 +290,19 @@ def clone_map(source_path, dest_path)
   puts "Map cloned from #{source_path} to #{dest_path}"
 end
 
-def patch_map_data(file_path, map_data_json)
+def patch_map_data(file_path, map_data_json = nil)
   unless File.exist?(file_path)
     puts JSON.generate({ error: "Map file not found: #{file_path}" })
     return
   end
 
-  data = JSON.parse(map_data_json)
+  # Read JSON from stdin if not provided as argument (for large data)
+  json_string = map_data_json
+  if json_string.nil? || json_string.empty?
+    json_string = STDIN.read
+  end
+
+  data = JSON.parse(json_string)
   map = File.open(file_path, 'rb') { |f| Marshal.load(f) }
 
   # Remove events and encounters to avoid serialization issues
@@ -283,18 +310,67 @@ def patch_map_data(file_path, map_data_json)
   map.encounter_list = []
 
   layers = data['layers'] || data['data'] || []
-  max_width = [map.width, layers[0]&.first&.length || 0].min
-  max_height = [map.height, layers[0]&.length || 0].min
+  
+  # Validate layer structure
+  if layers.empty? || layers[0].nil? || layers[0].empty?
+    puts JSON.generate({ error: "Invalid layers data: empty or nil" })
+    return
+  end
+  
+  layer_width = layers[0].first&.length || 0
+  layer_height = layers[0].length || 0
+  
+  puts "Patching map: file=#{file_path}"
+  puts "Map dimensions: #{map.width}x#{map.height}"
+  puts "Layer dimensions: #{layer_width}x#{layer_height}"
+  
+  # Validate dimensions match
+  if layer_width != map.width || layer_height != map.height
+    error_msg = "Dimension mismatch! Map: #{map.width}x#{map.height}, Layers: #{layer_width}x#{layer_height}"
+    puts JSON.generate({ error: error_msg })
+    STDERR.puts error_msg
+    return
+  end
+  
+  puts "Sample tile before patch: map.data[0,0,0]=#{map.data[0, 0, 0]}"
+  puts "Sample tile from layers: layers[0][0][0]=#{layers[0] && layers[0][0] ? layers[0][0][0] : 'nil'}"
 
+  tiles_written = 0
+  tiles_skipped = 0
+  
   (0...3).each do |z|
-    (0...max_height).each do |y|
-      (0...max_width).each do |x|
-        tile = layers[z] && layers[z][y] ? layers[z][y][x] : nil
-        next if tile.nil?
-        map.data[x, y, z] = tile
+    layer = layers[z]
+    next if layer.nil?
+    
+    (0...map.height).each do |y|
+      row = layer[y]
+      next if row.nil?
+      
+      (0...map.width).each do |x|
+        new_tile = row[x]
+        next if new_tile.nil?
+        
+        # Validate tile value is a valid integer
+        if !new_tile.is_a?(Integer) || new_tile < 0 || new_tile > 65535
+          STDERR.puts "Invalid tile value at [#{x},#{y},#{z}]: #{new_tile.inspect}"
+          tiles_skipped += 1
+          next
+        end
+        
+        # Only write if tile actually changed (preserve original values)
+        original_tile = map.data[x, y, z]
+        if new_tile != original_tile
+          map.data[x, y, z] = new_tile
+          tiles_written += 1
+        else
+          tiles_skipped += 1
+        end
       end
     end
   end
+  
+  puts "Wrote #{tiles_written} changed tiles, skipped #{tiles_skipped} unchanged tiles"
+  puts "Sample tile after patch: map.data[0,0,0]=#{map.data[0, 0, 0]}"
 
   File.open(file_path, 'wb') do |f|
     Marshal.dump(map, f)

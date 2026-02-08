@@ -158,8 +158,8 @@ api.post('/api/compile-map-spec', async (req, res) => {
 });
 
 api.post('/api/run-map-test', async (req, res) => {
-  const { projectPath, mapName, testType } = req.body;
-  const result = await handleRunMapTest(projectPath, mapName, testType);
+  const { projectPath, mapName, mapId, testType } = req.body;
+  const result = await handleRunMapTest(projectPath, mapName, mapId, testType);
   res.json(result);
 });
 
@@ -469,11 +469,15 @@ function findTopTwoTiles(layer: number[][]): [number, number] {
   return [base, accent];
 }
 
-type MapTestType = 'path' | 'pond' | 'decor' | 'elevation' | 'all' | 'ai' | 'sanity';
+type MapTestType = 'ai' | 'sanity';
 
-async function handleRunMapTest(projectPath: string, mapName: string, testType: MapTestType) {
+async function handleRunMapTest(projectPath: string, mapName: string, mapId: number | undefined, testType: MapTestType) {
   if (!projectPath) {
     return { success: false, error: 'Project path is required.' };
+  }
+
+  if (!mapId) {
+    return { success: false, error: 'Select a map via Tileset Inspector before running tests.' };
   }
 
   const projectService = new ProjectService(projectPath);
@@ -481,45 +485,70 @@ async function handleRunMapTest(projectPath: string, mapName: string, testType: 
     return { success: false, error: 'The selected directory does not appear to be a valid Pokemon Essentials project.' };
   }
 
-  const normalizedType = testType || 'all';
-  const validTypes: MapTestType[] = ['path', 'pond', 'decor', 'elevation', 'all', 'ai', 'sanity'];
+  const normalizedType = testType || 'ai';
+  const validTypes: MapTestType[] = ['ai', 'sanity'];
   if (!validTypes.includes(normalizedType)) {
     return { success: false, error: `Invalid test type: ${testType}` };
   }
 
   try {
     const mapInfos = await mapGenerator.readMapInfos(projectPath);
-    const mapEntry = Object.values(mapInfos).find(
-      (info) => info.name.toLowerCase() === mapName.toLowerCase()
-    );
+    const mapEntry = Object.values(mapInfos).find((info) => info.id === mapId);
     if (!mapEntry) {
       return { success: false, error: `Map "${mapName}" not found in MapInfos.` };
     }
 
     const templateMap = await mapGenerator.readMap(projectPath, mapEntry.id);
+    console.log(`[handleRunMapTest] Read template map: ${mapEntry.name} (ID: ${mapEntry.id}), size: ${templateMap.width}x${templateMap.height}, tileset: ${templateMap.tilesetId}`);
+    console.log(`[handleRunMapTest] Template map layers structure: layer0=${templateMap.layers[0]?.length} rows, layer1=${templateMap.layers[1]?.length} rows, layer2=${templateMap.layers[2]?.length} rows`);
+    if (templateMap.layers[0]?.[0]) {
+      console.log(`[handleRunMapTest] Sample tiles from template (first row, first 10 tiles):`, templateMap.layers[0][0].slice(0, 10));
+      console.log(`[handleRunMapTest] Sample tiles from template (row 10, first 10 tiles):`, templateMap.layers[0][10]?.slice(0, 10));
+      console.log(`[handleRunMapTest] Sample tiles from template (row 20, first 10 tiles):`, templateMap.layers[0][20]?.slice(0, 10));
+    }
     const tilesets = await mapGenerator.readTilesets(projectPath);
     const tileset = tilesets.find((t) => t.id === templateMap.tilesetId);
     const nextId = await projectService.getNextMapId();
 
     const mapResult = normalizedType === 'ai'
       ? await createAiTestMap(nextId, templateMap, tileset, projectPath)
-      : createTestMapFromTemplate(nextId, templateMap, tileset, normalizedType);
+      : createSanityTestMap(nextId, templateMap, tileset);
     const mapData = mapResult.mapData;
+    
+    console.log(`[handleRunMapTest] Cloning map file from ${mapEntry.id} to ${nextId}...`);
     await mapGenerator.cloneMapFile(projectPath, mapEntry.id, nextId);
-    await mapGenerator.patchMapData(projectPath, nextId, mapData);
+    
+    console.log(`[handleRunMapTest] Patching map data for map ${nextId}...`);
+    console.log(`[handleRunMapTest] MapData dimensions: ${mapData.width}x${mapData.height}, layers: ${mapData.layers.length} layers`);
+    try {
+      await mapGenerator.patchMapData(projectPath, nextId, mapData);
+      console.log(`[handleRunMapTest] Map patching completed successfully`);
+    } catch (error: any) {
+      console.error(`[handleRunMapTest] Map patching failed:`, error);
+      throw error;
+    }
+    
+    console.log(`[handleRunMapTest] Registering map ${nextId} in MapInfos...`);
     await mapGenerator.registerMapInInfos(projectPath, nextId, mapData.name);
+    console.log(`[handleRunMapTest] Map ${nextId} registered successfully`);
 
-    return { success: true, mapId: nextId, mapData, debug: mapResult.debug };
+    return {
+      success: true,
+      mapId: nextId,
+      mapData,
+      debug: mapResult.debug,
+      sourceMapId: mapEntry.id,
+      sourceMapName: mapEntry.name
+    };
   } catch (error: any) {
     return { success: false, error: error.message || 'Failed to run map test.' };
   }
 }
 
-function createTestMapFromTemplate(
+function createSanityTestMap(
   mapId: number,
   templateMap: { tilesetId: number; width: number; height: number; layers: number[][][] },
-  tileset: { autotileNames: string[]; passages?: number[]; priorities?: number[] } | undefined,
-  testType: MapTestType
+  tileset: { autotileNames: string[]; passages?: number[]; priorities?: number[] } | undefined
 ) {
   const layers = cloneLayers(templateMap.layers);
   const baseCandidates = findTopTiles(layers[0], 10);
@@ -528,59 +557,29 @@ function createTestMapFromTemplate(
     throw new Error('Sanity check failed: no base tile candidates found.');
   }
 
-  const pathTile = pickPathTileFromTileset(tileset, baseTile);
-  const elevationTile = pickElevationTileFromTileset(tileset);
-
-  const decorCandidates = findTopTiles(layers[1], 6);
-  const decorTile = pickDecorTileFromTileset(tileset) ?? decorCandidates[0];
-  const stairTile = pickStairTileFromTileset(tileset);
+  const pathTile = pickPathTileFromTileset(tileset, baseTile, layers[0]);
+  if (!pathTile) {
+    throw new Error('Sanity check failed: no valid path tile found.');
+  }
 
   const waterTile = selectWaterTile(layers[0], tileset);
   if (!waterTile) {
     throw new Error('Sanity check failed: no valid water tile found.');
   }
 
-  const isSanity = testType === 'sanity';
-  if (isSanity) {
-    // Sanity test uses a clean base to make changes obvious
-    fillLayer(layers[0], baseTile);
-    clearLayer(layers[1]);
-    clearLayer(layers[2]);
-  }
+  // Sanity test uses a clean base to make changes obvious
+  fillLayer(layers[0], baseTile);
+  clearLayer(layers[1]);
+  clearLayer(layers[2]);
+  carvePath(layers[0], pathTile);
+  const pondTiles = carvePond(layers[0], waterTile);
+  clearLayerArea(layers[1], pondTiles);
+  clearLayerArea(layers[2], pondTiles);
 
-  if (testType === 'path' || testType === 'all' || testType === 'sanity') {
-    if (!pathTile) {
-      throw new Error('Sanity check failed: no valid path tile found.');
-    }
-    carvePath(layers[0], pathTile);
-  }
-
-  if (testType === 'pond' || testType === 'all' || testType === 'sanity') {
-    const pondTiles = carvePond(layers[0], waterTile);
-    clearLayerArea(layers[1], pondTiles);
-    clearLayerArea(layers[2], pondTiles);
-  }
-
-  if (testType === 'decor' || testType === 'all' || testType === 'sanity') {
-    if (!decorTile) {
-      throw new Error('Sanity check failed: no valid decor tile found.');
-    }
-    scatterDecor(layers[1], decorTile);
-  }
-
-  if (testType === 'elevation' || testType === 'all' || testType === 'sanity') {
-    if (elevationTile && stairTile) {
-      buildElevation(layers, elevationTile, stairTile);
-    }
-  }
-
-  const nameSuffix = testType === 'all'
-    ? 'All Tests'
-    : `${testType[0].toUpperCase()}${testType.slice(1)} Test`;
   return {
     mapData: {
       id: mapId,
-      name: `POC ${nameSuffix}`,
+      name: 'POC Sanity Test',
       width: templateMap.width,
       height: templateMap.height,
       tilesetId: templateMap.tilesetId,
@@ -591,9 +590,7 @@ function createTestMapFromTemplate(
       baseTile,
       pathTile,
       waterTile,
-      decorTile,
-      elevationTile,
-      stairTile
+      description: `Sanity test: Base tile ${baseTile} fills map, path tile ${pathTile} creates wavy path, water tile ${waterTile} creates elliptical pond at 70% width, 35% height`
     }
   };
 }
@@ -622,100 +619,141 @@ async function createAiTestMap(
   const stairCandidates = findTopTiles(templateMap.layers[1], 12);
   const waterCandidates = buildWaterCandidates(templateMap.layers[0], tileset);
 
+  // Add timestamp and random seed to encourage variation in AI responses
+  const timestamp = Date.now();
+  const randomSeed = Math.floor(Math.random() * 10000);
+  
   const aiPrompt = `
-ACTION: Choose tile IDs for a map editing test.
+You are designing a Pokemon game map for RPG Maker XP. Generate a CREATIVE and VARIED map edit plan.
+
+IMPORTANT: This is request #${timestamp} with random seed ${randomSeed}. Create a UNIQUE design that differs from previous requests.
+
 Return JSON ONLY with this exact shape (no extra keys, no markdown):
 {
   "tilePlan": {
-    "baseTile": number,
-    "pathTile": number,
-    "waterTile": number,
-    "decorTile": number,
-    "elevationTile": number | null,
-    "stairTile": number,
+    "name": string,
+    "edits": Array<{ "x": number, "y": number, "z": 0|1|2, "tile": number }>,
     "notes": string
   }
 }
 
-Rules:
-- All IDs must be chosen from the candidate lists below.
-- pathTile should represent path/ground material (not water/building/stairs).
-- waterTile must be from waterCandidates.
-- decorTile should be a decoration on layer 1.
-- elevationTile should represent cliffs/raised ground if available. If elevationCandidates is empty, set elevationTile to null.
-- stairTile can be a stair/transition tile (use stairCandidates).
+Design Guidelines:
+- Create INTERESTING patterns: winding paths, irregular water features, elevation changes
+- IMPORTANT: Spread edits across the ENTIRE map area (0-${templateMap.width - 1} width, 0-${templateMap.height - 1} height)
+- Don't cluster all edits in one small area - distribute them across different regions
+- Use different layers strategically: layer 0 for base terrain, layer 1 for decorations/elevation, layer 2 for overlays
+- Make paths that curve and wind across the map, connecting different areas
+- Create water features (ponds, rivers) with organic shapes that span multiple areas
+- CRITICAL: Keep edits to 30-80 maximum, but spread them across the map dimensions
+- Use coordinates that cover the full map range - don't just edit a small corner
+- Use compact JSON format - minimize whitespace in your response
 
-Candidates:
-baseCandidates: ${JSON.stringify(baseCandidates)}
-pathCandidates: ${JSON.stringify(pathCandidates)}
-waterCandidates: ${JSON.stringify(waterCandidates)}
-decorCandidates: ${JSON.stringify(decorCandidates)}
-elevationCandidates: ${JSON.stringify(elevationCandidates)}
-stairCandidates: ${JSON.stringify(stairCandidates)}
+Technical Rules:
+- Edits modify the existing map in place (do not output a full map).
+- Use ONLY tile IDs from the candidate lists below.
+- Coordinates: x (0 to ${templateMap.width - 1}), y (0 to ${templateMap.height - 1}), z (0, 1, or 2)
+- Each edit must have valid coordinates within map bounds
+- CRITICAL: Distribute edits across the FULL map range:
+  * Use x coordinates from 0 to ${templateMap.width - 1} (not just one small area)
+  * Use y coordinates from 0 to ${templateMap.height - 1} (not just one small area)
+  * Create features in different regions: top-left, top-right, bottom-left, bottom-right, center
+  * Example: If map is ${templateMap.width}x${templateMap.height}, spread edits across all quadrants
 
-Map size: ${templateMap.width}x${templateMap.height}
-TilesetId: ${templateMap.tilesetId}
-ProjectPath: ${projectPath}
+Available Tile Candidates:
+baseCandidates: ${JSON.stringify(baseCandidates)} - Use for base terrain
+pathCandidates: ${JSON.stringify(pathCandidates)} - Use for walkable paths
+waterCandidates: ${JSON.stringify(waterCandidates)} - Use for water features
+decorCandidates: ${JSON.stringify(decorCandidates)} - Use for decorative elements
+elevationCandidates: ${JSON.stringify(elevationCandidates)} - Use for elevated terrain
+stairCandidates: ${JSON.stringify(stairCandidates)} - Use for stairs/transitions
+
+Map dimensions: ${templateMap.width} tiles wide × ${templateMap.height} tiles tall
+Tileset ID: ${templateMap.tilesetId}
+
+Be CREATIVE and make each design UNIQUE!
 `.trim();
 
   const response = await aiService.chat(aiPrompt, { projectPath });
+  console.log('[AI Test] Raw response:', JSON.stringify(response, null, 2));
   const plan = extractTilePlan(response);
 
   if (!plan) {
-    throw new Error('Sanity check failed: AI did not return JSON tilePlan.');
+    console.error('[AI Test] Failed to extract tile plan from response:', response);
+    throw new Error('Sanity check failed: AI did not return JSON.');
   }
 
-  const baseTile = pickFromCandidates(plan.baseTile, baseCandidates);
-  const pathTile = pickFromCandidates(plan.pathTile, pathCandidates);
-  const waterTile = pickFromCandidates(plan.waterTile, waterCandidates);
-  const decorTile = pickFromCandidates(plan.decorTile, decorCandidates);
-  const elevationTile = plan.elevationTile === null
-    ? null
-    : pickFromCandidates(plan.elevationTile, elevationCandidates);
-  const stairTile = pickFromCandidates(plan.stairTile, stairCandidates);
+  console.log('[AI Test] Extracted plan:', JSON.stringify(plan, null, 2));
 
-  if (!baseTile || !pathTile || !waterTile || !decorTile || (elevationCandidates.length > 0 && !elevationTile) || (elevationTile && !stairTile)) {
-    const debugSummary = JSON.stringify({
-      plan,
-      baseCandidates,
-      pathCandidates,
-      waterCandidates,
-      decorCandidates,
-      elevationCandidates,
-      stairCandidates
-    });
-    throw new Error(`Sanity check failed: AI returned tiles outside candidates. Debug: ${debugSummary}`);
+  if (!plan?.edits || !Array.isArray(plan.edits)) {
+    console.error('[AI Test] Plan missing edits array:', plan);
+    throw new Error('AI did not return edits array.');
   }
 
-  const layers = cloneLayers(templateMap.layers);
-  // AI tests should integrate with the existing map, not overwrite it.
-  const pondTiles = carvePond(layers[0], waterTile);
-  clearLayerArea(layers[1], pondTiles);
-  clearLayerArea(layers[2], pondTiles);
-  carvePath(layers[0], pathTile);
-  scatterDecor(layers[1], decorTile);
-  if (elevationTile && stairTile) {
-    buildElevation(layers, elevationTile, stairTile);
+  const editsBounds = getEditsBounds(plan.edits);
+  if (!editsBounds) {
+    throw new Error('AI returned empty edits.');
   }
+
+  // Check if edits are too clustered
+  const mapWidth = templateMap.width;
+  const mapHeight = templateMap.height;
+  const editArea = (editsBounds.maxX - editsBounds.minX + 1) * (editsBounds.maxY - editsBounds.minY + 1);
+  const mapArea = mapWidth * mapHeight;
+  const coveragePercent = (editArea / mapArea) * 100;
+  
+  console.log(`[AI Test] Edit coverage: ${coveragePercent.toFixed(1)}% of map (${editArea} tiles out of ${mapArea})`);
+  console.log(`[AI Test] Edit bounds: x(${editsBounds.minX}-${editsBounds.maxX}), y(${editsBounds.minY}-${editsBounds.maxY})`);
+  
+  if (coveragePercent < 5) {
+    console.warn(`[AI Test] WARNING: Edits are very clustered (only ${coveragePercent.toFixed(1)}% of map). Consider spreading edits across more of the map.`);
+  }
+
+  console.log('[AI Test] Applying', plan.edits.length, 'edits to map');
+  console.log('[AI Test] Sample edits (first 10):', JSON.stringify(plan.edits.slice(0, 10), null, 2));
+  
+  // Analyze edits before applying
+  const editsByLayer = { 0: 0, 1: 0, 2: 0 };
+  const editsByTile = new Map<number, number>();
+  for (const edit of plan.edits) {
+    if (edit && typeof edit.z === 'number' && edit.z >= 0 && edit.z <= 2) {
+      editsByLayer[edit.z as keyof typeof editsByLayer]++;
+    }
+    if (edit && typeof edit.tile === 'number') {
+      editsByTile.set(edit.tile, (editsByTile.get(edit.tile) || 0) + 1);
+    }
+  }
+  console.log('[AI Test] Edits by layer:', editsByLayer);
+  console.log('[AI Test] Top 10 most used tiles:', Array.from(editsByTile.entries())
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 10)
+    .map(([tile, count]) => `Tile ${tile}: ${count} edits`));
+  
+  // Log template map sample before applying edits
+  console.log('[AI Test] Template map sample before edits - layers[0][0][0:5]:', templateMap.layers[0][0].slice(0, 5));
+  console.log('[AI Test] Template map sample before edits - layers[0][10][0:5]:', templateMap.layers[0][10].slice(0, 5));
+  
+  const modifiedLayers = applyEditsToLayers(templateMap.layers, plan.edits);
+  
+  // Log modified map sample after applying edits
+  console.log('[AI Test] Modified map sample after edits - layers[0][0][0:5]:', modifiedLayers[0][0].slice(0, 5));
+  console.log('[AI Test] Modified map sample after edits - layers[0][10][0:5]:', modifiedLayers[0][10].slice(0, 5));
+  console.log('[AI Test] Edits applied successfully');
 
   return {
     mapData: {
       id: mapId,
-      name: 'POC AI Tests',
+      name: plan.name || 'POC AI Tests',
       width: templateMap.width,
       height: templateMap.height,
       tilesetId: templateMap.tilesetId,
-      layers,
+      layers: modifiedLayers,
       events: []
     },
     debug: {
-      baseTile,
-      pathTile,
-      waterTile,
-      decorTile,
-      elevationTile,
-      stairTile,
-      notes: plan?.notes
+      notes: plan?.notes,
+      editsCount: plan.edits.length,
+      editsBounds,
+      sampleEdits: plan.edits.slice(0, 5) // Log first 5 edits for debugging
     }
   };
 }
@@ -797,15 +835,40 @@ function buildRegularTileIds(tileset: { passages?: number[]; priorities?: number
 
 function pickPathTileFromTileset(
   tileset: { passages?: number[]; priorities?: number[] } | undefined,
-  baseTile: number
+  baseTile: number,
+  layer?: number[][]
 ): number | null {
-  const candidates = buildRegularTileIds(tileset).filter((tileId) => {
+  // First try: look for regular tiles (384+) in tileset with passage=0 and priority=0
+  const regularCandidates = buildRegularTileIds(tileset).filter((tileId) => {
     if (tileId === baseTile) return false;
     const passage = getPassage(tileset, tileId);
     const priority = getPriority(tileset, tileId);
     return (passage === 0 || passage === null) && (priority === 0 || priority === null);
   });
-  return candidates[0] ?? null;
+  if (regularCandidates.length > 0) {
+    return regularCandidates[0];
+  }
+
+  // Fallback: if we have layer data, find tiles from the map that match the criteria
+  if (layer) {
+    const mapCandidates = findCandidateTiles(layer, (tile) => {
+      if (tile === baseTile || !tile || tile === 0) return false;
+      const passage = getPassage(tileset, tile);
+      const priority = getPriority(tileset, tile);
+      return (passage === 0 || passage === null) && (priority === 0 || priority === null);
+    }, 5);
+    if (mapCandidates.length > 0) {
+      return mapCandidates[0];
+    }
+  }
+
+  // Last resort: return any regular tile that's not the base tile
+  const anyRegularTile = buildRegularTileIds(tileset).find((tileId) => tileId !== baseTile);
+  if (anyRegularTile) {
+    return anyRegularTile;
+  }
+
+  return null;
 }
 
 function pickElevationTileFromTileset(
@@ -877,41 +940,144 @@ function pickFromCandidates(tile: number | undefined, candidates: number[]): num
   return null;
 }
 
+function validateMapData(mapData: any, templateMap: { width: number; height: number; tilesetId: number }) {
+  // Deprecated: AI now returns compact edits; keep stub for backwards compatibility.
+  return;
+}
+
 function extractTilePlan(response: any): {
-  baseTile: number;
-  pathTile: number;
-  waterTile: number;
-  decorTile: number;
-  elevationTile: number;
-  stairTile: number;
+  name?: string;
+  edits?: Array<{ x: number; y: number; z: number; tile: number }>;
   notes?: string;
 } | null {
   if (!response) return null;
   if (response.tilePlan) return response.tilePlan;
-  if (response.baseTile) return response;
-  if (typeof response.text === 'string') {
-    const jsonMatch = response.text.match(/\{[\s\S]*\}/);
-    if (jsonMatch) {
+  
+  const getText = (): string => {
+    if (typeof response.text === 'string') return response.text.trim();
+    if (typeof response === 'string') return response.trim();
+    return '';
+  };
+  
+  const text = getText();
+  if (!text) return null;
+  
+  // Try direct parse first
+  try {
+    const parsed = JSON.parse(text);
+    if (parsed.tilePlan) return parsed.tilePlan;
+    if (parsed.edits) return parsed;
+  } catch (e) {
+    // JSON is invalid, continue to fallback parsing
+    console.log('[extractTilePlan] Direct parse failed, trying fallback methods...');
+  }
+  
+  // Extract all edits using regex (works even with truncated JSON)
+  const allEdits: Array<{ x: number; y: number; z: number; tile: number }> = [];
+  const editRegex = /\{"x":\s*(\d+),\s*"y":\s*(\d+),\s*"z":\s*([012]),\s*"tile":\s*(\d+)\}/g;
+  let editMatch;
+  while ((editMatch = editRegex.exec(text)) !== null) {
+    try {
+      allEdits.push({
+        x: parseInt(editMatch[1], 10),
+        y: parseInt(editMatch[2], 10),
+        z: parseInt(editMatch[3], 10),
+        tile: parseInt(editMatch[4], 10)
+      });
+    } catch {
+      // Skip invalid matches
+    }
+  }
+  
+  if (allEdits.length > 0) {
+    // Try to extract the name
+    const nameMatch = text.match(/"name":\s*"([^"]+)"/);
+    const name = nameMatch ? nameMatch[1] : 'AI Generated Map';
+    
+    console.log(`[extractTilePlan] Extracted ${allEdits.length} edits from response (may be truncated)`);
+    return { name, edits: allEdits, notes: 'Extracted from response (may be truncated)' };
+  }
+  
+  // Try to extract JSON from text (fallback for non-truncated but malformed JSON)
+  const jsonStart = text.indexOf('{');
+  if (jsonStart !== -1) {
+    const jsonEnd = text.lastIndexOf('}');
+    if (jsonEnd !== -1 && jsonEnd > jsonStart) {
+      const jsonSlice = text.slice(jsonStart, jsonEnd + 1);
       try {
-        const parsed = JSON.parse(jsonMatch[0]);
-        return parsed.tilePlan || parsed;
+        const parsed = JSON.parse(jsonSlice);
+        if (parsed.tilePlan) return parsed.tilePlan;
+        if (parsed.edits) return parsed;
       } catch {
-        return null;
+        // JSON slice is also invalid
       }
     }
   }
-  if (typeof response === 'string') {
-    const jsonMatch = response.match(/\{[\s\S]*\}/);
-    if (jsonMatch) {
-      try {
-        const parsed = JSON.parse(jsonMatch[0]);
-        return parsed.tilePlan || parsed;
-      } catch {
-        return null;
-      }
-    }
-  }
+  
+  console.error('[extractTilePlan] Failed to extract tile plan from response');
   return null;
+}
+
+function applyEditsToLayers(
+  layers: number[][][],
+  edits: Array<{ x: number; y: number; z: number; tile: number }>
+): number[][][] {
+  const cloned = cloneLayers(layers);
+  const height = cloned[0]?.length || 0;
+  const width = cloned[0]?.[0]?.length || 0;
+
+  let appliedCount = 0;
+  let skippedCount = 0;
+
+  for (const edit of edits) {
+    if (!edit) {
+      skippedCount++;
+      continue;
+    }
+    const { x, y, z, tile } = edit;
+    
+    // Validate coordinates
+    if (z < 0 || z > 2) {
+      skippedCount++;
+      continue;
+    }
+    if (x < 0 || y < 0 || x >= width || y >= height) {
+      skippedCount++;
+      continue;
+    }
+    
+    // Validate tile ID (should be a number, 0 or positive)
+    if (typeof tile !== 'number' || tile < 0) {
+      skippedCount++;
+      continue;
+    }
+    
+    // Apply the edit
+    cloned[z][y][x] = tile;
+    appliedCount++;
+  }
+
+  console.log(`[applyEditsToLayers] Applied ${appliedCount} edits, skipped ${skippedCount} invalid edits`);
+  if (skippedCount > 0 && skippedCount < edits.length) {
+    console.warn(`[applyEditsToLayers] Warning: ${skippedCount} edits were skipped due to invalid coordinates or tile IDs`);
+  }
+
+  return cloned;
+}
+
+function getEditsBounds(edits: Array<{ x: number; y: number; z: number; tile: number }>) {
+  if (!edits.length) return null;
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  for (const edit of edits) {
+    minX = Math.min(minX, edit.x);
+    minY = Math.min(minY, edit.y);
+    maxX = Math.max(maxX, edit.x);
+    maxY = Math.max(maxY, edit.y);
+  }
+  return { minX, minY, maxX, maxY };
 }
 
 
@@ -1280,8 +1446,8 @@ ipcMain.handle('compile-map-spec', async (event, { projectPath, spec }) => {
   return handleCompileMapSpec(projectPath, spec);
 });
 
-ipcMain.handle('run-map-test', async (event, { projectPath, mapName, testType }) => {
-  return handleRunMapTest(projectPath, mapName, testType);
+ipcMain.handle('run-map-test', async (event, { projectPath, mapName, mapId, testType }) => {
+  return handleRunMapTest(projectPath, mapName, mapId, testType);
 });
 
 // --- Read Project Data IPC Handlers ---

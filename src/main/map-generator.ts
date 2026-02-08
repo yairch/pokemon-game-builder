@@ -59,9 +59,14 @@ export class MapGenerator {
       const rubyProcess = spawn(this.rubyBinary, [
         this.rubyScriptPath,
         'create_map',
-        mapFilePath,
-        JSON.stringify(mapData)
-      ]);
+        mapFilePath
+      ], {
+        stdio: ['pipe', 'pipe', 'pipe']
+      });
+
+      const jsonData = JSON.stringify(mapData);
+      rubyProcess.stdin.write(jsonData);
+      rubyProcess.stdin.end();
 
       let errorOutput = '';
 
@@ -155,10 +160,64 @@ export class MapGenerator {
     });
   }
 
-  async patchMapData(projectPath: string, mapId: number, mapData: MapData): Promise<void> {
+  async patchMapData(projectPath: string, mapId: number, mapData: MapData, useRubyPatch: boolean = true): Promise<void> {
     const mapFilePath = path.join(projectPath, 'Data', `Map${mapId.toString().padStart(3, '0')}.rxdata`);
 
-    await this.patchMapDataBinary(mapFilePath, mapData);
+    if (useRubyPatch) {
+      // Use Ruby Marshal-based patching which preserves structure better
+      // Pass JSON via stdin to avoid ENAMETOOLONG error with large maps
+      return new Promise((resolve, reject) => {
+        const rubyProcess = spawn(this.rubyBinary, [
+          this.rubyScriptPath,
+          'patch_map_data',
+          mapFilePath
+        ], {
+          stdio: ['pipe', 'pipe', 'pipe']
+        });
+
+        const jsonData = JSON.stringify(mapData);
+        console.log(`[Ruby patch] Writing ${jsonData.length} bytes of JSON data to stdin...`);
+        console.log(`[Ruby patch] MapData: ${mapData.width}x${mapData.height}, ${mapData.layers.length} layers`);
+        rubyProcess.stdin.write(jsonData);
+        rubyProcess.stdin.end();
+        console.log(`[Ruby patch] JSON data written, waiting for Ruby process...`);
+
+        let stdoutOutput = '';
+        let errorOutput = '';
+        
+        // Capture stdout (where Ruby puts logs go)
+        rubyProcess.stdout.on('data', (data) => {
+          const output = data.toString();
+          stdoutOutput += output;
+          console.log('[Ruby patch stdout]', output.trim());
+        });
+
+        rubyProcess.stderr.on('data', (data) => {
+          const output = data.toString();
+          errorOutput += output;
+          console.error('[Ruby patch stderr]', output.trim());
+        });
+
+        rubyProcess.on('error', (err: any) => {
+          console.error('[Ruby patch] Process error:', err);
+          reject(new Error(`Failed to spawn Ruby process: ${err.message}`));
+        });
+
+        rubyProcess.on('close', (code) => {
+          if (code === 0) {
+            console.log('[Ruby patch] Completed successfully');
+            resolve();
+          } else {
+            console.error(`[Ruby patch] Process exited with code ${code}`);
+            console.error(`[Ruby patch] stdout: ${stdoutOutput}`);
+            console.error(`[Ruby patch] stderr: ${errorOutput}`);
+            reject(new Error(`Ruby process exited with code ${code}. Error: ${errorOutput || stdoutOutput}`));
+          }
+        });
+      });
+    } else {
+      await this.patchMapDataBinary(mapFilePath, mapData);
+    }
   }
 
   private async patchMapDataBinary(mapFilePath: string, mapData: MapData): Promise<void> {
@@ -207,6 +266,10 @@ export class MapGenerator {
       }
     }
 
+    if (!tableInfo || !payloadBuffer) {
+      throw new Error('Failed to locate Table dump in map file.');
+    }
+
     const { payloadOffset, payloadLength } = tableInfo;
     if (payloadOffset + payloadLength > fileBuffer.length) {
       throw new Error('Table dump payload exceeds file size.');
@@ -218,6 +281,13 @@ export class MapGenerator {
     const zsize = payload.readUInt32LE(8);
     const size = payload.readUInt32LE(12);
     const expectedDataBytes = size * 2;
+    
+    // Validate dimensions match
+    console.log(`[patchMapDataBinary] Binary file dimensions: ${xsize}x${ysize}x${zsize}, MapData dimensions: ${mapData.width}x${mapData.height}x3`);
+    if (xsize !== mapData.width || ysize !== mapData.height || zsize !== 3) {
+      console.error(`[patchMapDataBinary] WARNING: Dimension mismatch! Binary: ${xsize}x${ysize}x${zsize}, MapData: ${mapData.width}x${mapData.height}x3`);
+      // Don't throw, but log the mismatch
+    }
 
     if (xsize * ysize * zsize !== size) {
       throw new Error('Invalid Table dimensions in map file.');
@@ -227,23 +297,55 @@ export class MapGenerator {
     }
 
     const updatedPayload = Buffer.from(payload);
+    let tilesWritten = 0;
+    let tilesSkipped = 0;
+    
+    // Sample a few tiles before writing to debug
+    if (mapData.layers[0]?.[0]?.[0] !== undefined) {
+      console.log(`[patchMapDataBinary] Sample tile before write: layers[0][0][0] = ${mapData.layers[0][0][0]}`);
+      console.log(`[patchMapDataBinary] Sample tile from binary before write: index 0 = ${payload.readUInt16LE(16)}`);
+    }
+    
     const maxZ = Math.min(zsize, mapData.layers.length);
     for (let z = 0; z < maxZ; z += 1) {
       const layer = mapData.layers[z];
-      if (!layer) continue;
+      if (!layer) {
+        tilesSkipped += xsize * ysize;
+        continue;
+      }
       const maxY = Math.min(ysize, layer.length);
+      if (maxY !== ysize) {
+        console.warn(`[patchMapDataBinary] Layer ${z} has ${layer.length} rows but binary expects ${ysize}`);
+      }
       for (let y = 0; y < maxY; y += 1) {
         const row = layer[y];
-        if (!row) continue;
+        if (!row) {
+          tilesSkipped += xsize;
+          continue;
+        }
         const maxX = Math.min(xsize, row.length);
+        if (maxX !== xsize && y === 0 && z === 0) {
+          console.warn(`[patchMapDataBinary] Row 0 has ${row.length} columns but binary expects ${xsize}`);
+        }
         for (let x = 0; x < maxX; x += 1) {
           const tile = row[x];
-          if (tile === undefined || tile === null) continue;
           const index = x + y * xsize + z * xsize * ysize;
           const byteOffset = 16 + index * 2;
+          if (tile === undefined || tile === null) {
+            tilesSkipped++;
+            // Keep original tile value (don't write)
+            continue;
+          }
           updatedPayload.writeUInt16LE(tile, byteOffset);
+          tilesWritten++;
         }
       }
+    }
+    console.log(`[patchMapDataBinary] Wrote ${tilesWritten} tiles, skipped ${tilesSkipped} (kept original)`);
+    
+    // Sample a few tiles after writing to verify
+    if (updatedPayload.readUInt16LE(16) !== undefined) {
+      console.log(`[patchMapDataBinary] Sample tile after write: index 0 = ${updatedPayload.readUInt16LE(16)}`);
     }
 
     updatedPayload.copy(fileBuffer, payloadOffset);
