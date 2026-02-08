@@ -2,9 +2,10 @@ const API_BASE = 'http://localhost:3001/api';
 
 export const bridge = {
   invoke: async (channel: string, data?: any): Promise<any> => {
-    // Create a timeout promise (30s for API calls that may try multiple models)
+    const timeoutMs = channel === 'run-map-test' ? 120000 : 30000;
+    // Create a timeout promise (longer for AI map tests)
     const timeoutPromise = new Promise((_, reject) =>
-      setTimeout(() => reject(new Error('Request timed out after 30 seconds.')), 30000)
+      setTimeout(() => reject(new Error(`Request timed out after ${timeoutMs / 1000} seconds.`)), timeoutMs)
     );
 
     const callPromise = (async () => {
@@ -77,6 +78,56 @@ export const bridge = {
         }
         case 'debug-list-models': {
           const res = await fetch(`${API_BASE}/debug-list-models`);
+          return res.json();
+        }
+        case 'get-stub-map-spec': {
+          const res = await fetch(`${API_BASE}/stub/map-spec`);
+          return res.json();
+        }
+        case 'compile-map-spec': {
+          const res = await fetch(`${API_BASE}/compile-map-spec`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(data),
+          });
+          return res.json();
+        }
+        case 'run-map-test': {
+          const res = await fetch(`${API_BASE}/run-map-test`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(data),
+          });
+          return res.json();
+        }
+        case 'read-map': {
+          const { projectPath, mapId } = data;
+          const res = await fetch(`${API_BASE}/read-map/${mapId}?projectPath=${encodeURIComponent(projectPath)}`);
+          return res.json();
+        }
+        case 'read-map-infos': {
+          const { projectPath } = data;
+          const res = await fetch(`${API_BASE}/read-map-infos?projectPath=${encodeURIComponent(projectPath)}`);
+          return res.json();
+        }
+        case 'read-tilesets': {
+          const { projectPath } = data;
+          const res = await fetch(`${API_BASE}/read-tilesets?projectPath=${encodeURIComponent(projectPath)}`);
+          return res.json();
+        }
+        case 'read-system': {
+          const { projectPath } = data;
+          const res = await fetch(`${API_BASE}/read-system?projectPath=${encodeURIComponent(projectPath)}`);
+          return res.json();
+        }
+        case 'read-project-context': {
+          const { projectPath } = data;
+          const res = await fetch(`${API_BASE}/read-project-context?projectPath=${encodeURIComponent(projectPath)}`);
+          return res.json();
+        }
+        case 'tileset-inspector': {
+          const { projectPath, mapName } = data;
+          const res = await fetch(`${API_BASE}/tileset-inspector?projectPath=${encodeURIComponent(projectPath)}&mapName=${encodeURIComponent(mapName)}`);
           return res.json();
         }
         case 'ping': {

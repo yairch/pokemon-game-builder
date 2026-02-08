@@ -20,6 +20,17 @@ export class ClaudeAIService implements IAIService {
     console.log(`ClaudeAIService initialized with model: ${modelName}`);
   }
 
+  private getMaxTokens(): number {
+    // Model-specific max token limits
+    if (this.modelName.includes('haiku')) {
+      return 4096; // Haiku models have 4096 max
+    }
+    if (this.modelName.includes('sonnet') || this.modelName.includes('opus')) {
+      return 8192; // Sonnet and Opus can handle more
+    }
+    return 4096; // Default to safe limit
+  }
+
   async chat(message: string, context: any) {
     const systemPrompt = `You are a Pokemon game developer expert for RPG Maker XP and Pokemon Essentials.
 You follow best practices from:
@@ -44,10 +55,11 @@ Otherwise, respond with a helpful text message.
 IMPORTANT: Only return JSON if you are generating a map or performing an action.`;
 
     try {
-      console.log(`Attempting Claude request via ${this.modelName}...`);
+      const maxTokens = this.getMaxTokens();
+      console.log(`Attempting Claude request via ${this.modelName} (max_tokens: ${maxTokens})...`);
       const response = await this.client.messages.create({
         model: this.modelName,
-        max_tokens: 4096,
+        max_tokens: maxTokens,
         system: systemPrompt,
         messages: [
           {

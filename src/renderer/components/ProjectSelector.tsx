@@ -1,6 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { FolderOpen, PlusCircle, CheckCircle, Key } from 'lucide-react';
 import { bridge } from '../services/bridge';
+import { TilesetInspectorData } from '../../shared/types';
 
 type AIProvider = 'claude' | 'gemini';
 
@@ -31,6 +32,15 @@ const ProjectSelector: React.FC<ProjectSelectorProps> = ({
   const [isTestingModel, setIsTestingModel] = useState(false);
   const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
   const [currentProvider, setCurrentProvider] = useState<AIProvider>('gemini');
+  const [tilesetInspector, setTilesetInspector] = useState<TilesetInspectorData | null>(null);
+  const [tilesetInspectorError, setTilesetInspectorError] = useState('');
+  const [tilesetInspectorLoading, setTilesetInspectorLoading] = useState(false);
+  const [tilesetMapName, setTilesetMapName] = useState('Route 2');
+  const [tilesetMapId, setTilesetMapId] = useState<number | null>(null);
+  const tilesetCanvasRef = useRef<HTMLCanvasElement>(null);
+  const tilesetImageRef = useRef<HTMLImageElement>(null);
+  const [mapTestRunning, setMapTestRunning] = useState(false);
+  const [mapTestResult, setMapTestResult] = useState<{ success: boolean; message: string } | null>(null);
 
   useEffect(() => {
     const fetchProvider = async () => {
@@ -72,6 +82,54 @@ const ProjectSelector: React.FC<ProjectSelectorProps> = ({
       fetchModels();
     }
   }, [hasApiKey, keyVersion, currentProvider]);
+
+  useEffect(() => {
+    if (!tilesetInspector) return;
+
+    const img = tilesetImageRef.current;
+    const canvas = tilesetCanvasRef.current;
+    if (!img || !canvas) return;
+
+    const handleDraw = () => {
+      const tileSize = tilesetInspector.tileWidth;
+      canvas.width = img.naturalWidth;
+      canvas.height = img.naturalHeight;
+
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return;
+
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(img, 0, 0);
+
+      ctx.font = '10px monospace';
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'top';
+
+      const cols = Math.floor(img.naturalWidth / tileSize);
+      const rows = Math.floor(img.naturalHeight / tileSize);
+
+      let tileId = 384;
+      for (let y = 0; y < rows; y += 1) {
+        for (let x = 0; x < cols; x += 1) {
+          const px = x * tileSize;
+          const py = y * tileSize;
+
+          ctx.fillStyle = 'rgba(0,0,0,0.6)';
+          ctx.fillRect(px, py, 26, 12);
+          ctx.fillStyle = '#ffffff';
+          ctx.fillText(String(tileId), px + 2, py + 1);
+
+          tileId += 1;
+        }
+      }
+    };
+
+    if (img.complete) {
+      handleDraw();
+    } else {
+      img.onload = handleDraw;
+    }
+  }, [tilesetInspector]);
 
   const handleProviderChange = async (provider: AIProvider) => {
     if (provider === currentProvider) return; // Already on this provider
@@ -150,6 +208,76 @@ const ProjectSelector: React.FC<ProjectSelectorProps> = ({
       }
     } finally {
       setIsInitializing(false);
+    }
+  };
+
+  const handleOpenTilesetInspector = async () => {
+    if (!currentPath) {
+      setTilesetInspectorError('Please select a project first.');
+      setTilesetInspector(null);
+      return;
+    }
+    setTilesetInspectorError('');
+    setTilesetInspectorLoading(true);
+    try {
+      const result = await bridge.invoke('tileset-inspector', {
+        projectPath: currentPath,
+        mapName: tilesetMapName
+      });
+      if (result.success) {
+        setTilesetInspector(result.data);
+        setTilesetMapId(result.data.mapId);
+      } else {
+        setTilesetInspector(null);
+        setTilesetInspectorError(result.error || 'Failed to load tileset inspector.');
+      }
+    } catch (e: any) {
+      setTilesetInspector(null);
+      setTilesetInspectorError(e.message || 'Failed to load tileset inspector.');
+    } finally {
+      setTilesetInspectorLoading(false);
+    }
+  };
+
+  const handleRunMapTest = async (testType: 'ai' | 'sanity') => {
+    if (!currentPath) {
+      setMapTestResult({ success: false, message: 'Please select a project first.' });
+      return;
+    }
+    if (!tilesetMapId) {
+      setMapTestResult({ success: false, message: 'Please open Tileset Inspector for a map first.' });
+      return;
+    }
+    setMapTestRunning(true);
+    setMapTestResult(null);
+    try {
+      const result = await bridge.invoke('run-map-test', {
+        projectPath: currentPath,
+        mapName: tilesetMapName,
+        mapId: tilesetMapId ?? undefined,
+        testType
+      });
+      if (result.success) {
+        let debug = '';
+        if (result.debug?.editsCount) {
+          const bounds = result.debug.editsBounds
+            ? ` bounds(${result.debug.editsBounds.minX},${result.debug.editsBounds.minY})-(${result.debug.editsBounds.maxX},${result.debug.editsBounds.maxY})`
+            : '';
+          debug = ` [edits:${result.debug.editsCount}${bounds}]`;
+        } else if (result.debug) {
+          debug = ` [base:${result.debug.baseTile}, path:${result.debug.pathTile}, water:${result.debug.waterTile}, decor:${result.debug.decorTile}, elev:${result.debug.elevationTile}, stair:${result.debug.stairTile}]`;
+        }
+        const sourceInfo = result.sourceMapId
+          ? ` source:${result.sourceMapId} (${result.sourceMapName || 'unknown'})`
+          : '';
+        setMapTestResult({ success: true, message: `Created Map${String(result.mapId).padStart(3, '0')} (${result.mapData.name}).${debug}${sourceInfo}` });
+      } else {
+        setMapTestResult({ success: false, message: result.error || 'Test failed.' });
+      }
+    } catch (e: any) {
+      setMapTestResult({ success: false, message: e.message || 'Test failed.' });
+    } finally {
+      setMapTestRunning(false);
     }
   };
 
@@ -388,6 +516,112 @@ const ProjectSelector: React.FC<ProjectSelectorProps> = ({
           </div>
         </div>
       </div>
+
+      <div className="mt-6 pt-4 border-t border-gray-200">
+        <h3 className="text-sm font-medium text-gray-700 uppercase tracking-wider mb-2">Tileset Inspector</h3>
+        <div className="flex gap-2">
+          <input
+            type="text"
+            value={tilesetMapName}
+            onChange={(e) => setTilesetMapName(e.target.value)}
+            placeholder="Map name (e.g., Route 2)"
+            className="flex-1 px-3 py-2 text-xs border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+          />
+          <button
+            onClick={handleOpenTilesetInspector}
+            disabled={tilesetInspectorLoading}
+            className="px-3 py-2 bg-gray-800 text-white text-xs rounded hover:bg-black disabled:opacity-50"
+          >
+            {tilesetInspectorLoading ? 'Loading...' : 'Show Tileset IDs'}
+          </button>
+        </div>
+        {tilesetInspectorError && (
+          <div className="mt-2 text-xs text-red-600">{tilesetInspectorError}</div>
+        )}
+
+        <div className="mt-4">
+          <h4 className="text-xs font-semibold text-gray-700 mb-2">POC Map Tests</h4>
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+            <button
+              onClick={() => handleRunMapTest('sanity')}
+              disabled={mapTestRunning}
+              className="px-3 py-2 bg-slate-700 text-white text-xs rounded hover:bg-slate-800 disabled:opacity-50"
+            >
+              Sanity Test
+            </button>
+            <button
+              onClick={() => handleRunMapTest('ai')}
+              disabled={mapTestRunning || !hasApiKey}
+              className="px-3 py-2 bg-purple-600 text-white text-xs rounded hover:bg-purple-700 disabled:opacity-50"
+              title={!hasApiKey ? 'AI key required' : 'AI-driven tests'}
+            >
+              Run AI Tests
+            </button>
+          </div>
+          {mapTestResult && (
+            <div className={`mt-2 text-xs ${mapTestResult.success ? 'text-green-600' : 'text-red-600'}`}>
+              {mapTestResult.message}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {tilesetInspector && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[9999] p-4">
+          <div className="bg-white rounded-lg shadow-xl max-w-5xl w-full p-6 flex flex-col max-h-[90vh] overflow-hidden">
+            <div className="flex justify-between items-center mb-4">
+              <div>
+                <h3 className="text-lg font-bold text-gray-800">Tileset IDs</h3>
+                <p className="text-xs text-gray-500">
+                  Map: {tilesetInspector.mapName} (ID {tilesetInspector.mapId}) · Tileset {tilesetInspector.tilesetId}
+                </p>
+              </div>
+              <button onClick={() => setTilesetInspector(null)} className="text-gray-400 hover:text-gray-600">✕</button>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+              <div className="flex flex-col">
+                <h4 className="text-xs font-semibold text-gray-700 mb-2">Regular Tiles</h4>
+            <div className="flex-1 overflow-auto border border-gray-200 rounded bg-gray-50 p-2 max-h-[60vh]">
+                  <div className="relative inline-block">
+                    <img
+                      ref={tilesetImageRef}
+                      src={tilesetInspector.tilesetImageDataUrl || tilesetInspector.tilesetImageUrl}
+                      alt="Tileset"
+                      className="block max-w-full h-auto"
+                    />
+                    <canvas ref={tilesetCanvasRef} className="absolute left-0 top-0 pointer-events-none" />
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex flex-col">
+                <h4 className="text-xs font-semibold text-gray-700 mb-2">Autotiles</h4>
+                <div className="flex-1 overflow-auto border border-gray-200 rounded bg-gray-50 p-2 max-h-[60vh]">
+                  {(tilesetInspector.autotileImageDataUrls || []).length > 0 ? (
+                    <div className="grid grid-cols-2 gap-3">
+                      {tilesetInspector.autotileImageDataUrls.map((dataUrl, index) => (
+                        <div key={`${dataUrl}-${index}`} className="bg-white border border-gray-200 rounded p-2">
+                          <img
+                            src={dataUrl || tilesetInspector.autotileImageUrls?.[index]}
+                            alt={`Autotile ${index + 1}`}
+                            className="block w-full h-auto max-h-28 object-contain"
+                          />
+                          <div className="mt-1 text-[10px] text-gray-500 truncate">
+                            {tilesetInspector.autotileImagePaths?.[index] || `Autotile ${index + 1}`}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="text-xs text-gray-500">No autotiles configured.</div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
