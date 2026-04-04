@@ -469,7 +469,7 @@ function findTopTwoTiles(layer: number[][]): [number, number] {
   return [base, accent];
 }
 
-type MapTestType = 'ai' | 'sanity';
+type MapTestType = 'ai' | 'sanity' | 'object';
 
 async function handleRunMapTest(projectPath: string, mapName: string, mapId: number | undefined, testType: MapTestType) {
   if (!projectPath) {
@@ -486,7 +486,7 @@ async function handleRunMapTest(projectPath: string, mapName: string, mapId: num
   }
 
   const normalizedType = testType || 'ai';
-  const validTypes: MapTestType[] = ['ai', 'sanity'];
+  const validTypes: MapTestType[] = ['ai', 'sanity', 'object'];
   if (!validTypes.includes(normalizedType)) {
     return { success: false, error: `Invalid test type: ${testType}` };
   }
@@ -512,6 +512,8 @@ async function handleRunMapTest(projectPath: string, mapName: string, mapId: num
 
     const mapResult = normalizedType === 'ai'
       ? await createAiTestMap(nextId, templateMap, tileset, projectPath)
+      : normalizedType === 'object'
+      ? await createObjectTestMap(nextId, templateMap, tileset, projectPath)
       : createSanityTestMap(nextId, templateMap, tileset);
     const mapData = mapResult.mapData;
     
@@ -754,6 +756,387 @@ Be CREATIVE and make each design UNIQUE!
       editsCount: plan.edits.length,
       editsBounds,
       sampleEdits: plan.edits.slice(0, 5) // Log first 5 edits for debugging
+    }
+  };
+}
+
+// ============================================================
+// OBJECT PLACEMENT TEST - Tests AI ability to place coherent
+// multi-tile objects (trees, rocks, etc.) from tileset
+// ============================================================
+
+const TILESET_COLUMNS = 8; // RPG Maker XP tilesets are 8 tiles wide (256px / 32px)
+
+interface TileBlock {
+  id: string;
+  layer: number;
+  width: number;
+  height: number;
+  tiles: Array<{ dx: number; dy: number; tileId: number }>;
+  occurrences: number;
+}
+
+/**
+ * Check if a tile is a regular tileset tile (not autotile, not empty).
+ * Autotiles occupy IDs 48-383, regular tiles start at 384.
+ */
+function isRegularTile(tileId: number): boolean {
+  return tileId >= 384;
+}
+
+/**
+ * Check if four tiles form a 2x2 block where IDs are adjacent in the tileset grid.
+ * In RPG Maker XP, the tileset image is 8 tiles wide, so:
+ *   - Horizontal neighbor: tileId + 1 (same row in tileset)
+ *   - Vertical neighbor: tileId + 8 (next row in tileset)
+ */
+function is2x2TilesetBlock(tl: number, tr: number, bl: number, br: number): boolean {
+  if (!isRegularTile(tl) || !isRegularTile(tr) || !isRegularTile(bl) || !isRegularTile(br)) {
+    return false;
+  }
+  // tl and tr must be same tileset row, consecutive columns
+  // bl and br must be the row directly below tl and tr
+  return (
+    tr === tl + 1 &&
+    bl === tl + TILESET_COLUMNS &&
+    br === tl + TILESET_COLUMNS + 1
+  );
+}
+
+/**
+ * Extract 2x2 multi-tile objects from map layers by finding groups of tiles
+ * that are adjacent both in map space and in the tileset grid.
+ * Returns deduplicated blocks sorted by occurrence frequency.
+ */
+function extractTileBlocks(layers: number[][][]): TileBlock[] {
+  const patternCounts = new Map<string, TileBlock>();
+
+  for (let z = 0; z < layers.length; z++) {
+    const layer = layers[z];
+    if (!layer) continue;
+    const height = layer.length;
+    const width = layer[0]?.length || 0;
+
+    for (let y = 0; y < height - 1; y++) {
+      for (let x = 0; x < width - 1; x++) {
+        const tl = layer[y][x];
+        const tr = layer[y][x + 1];
+        const bl = layer[y + 1]?.[x];
+        const br = layer[y + 1]?.[x + 1];
+
+        if (tl === undefined || tr === undefined || bl === undefined || br === undefined) continue;
+
+        if (is2x2TilesetBlock(tl, tr, bl, br)) {
+          const key = `${z}:${tl}`;
+          const existing = patternCounts.get(key);
+          if (existing) {
+            existing.occurrences++;
+          } else {
+            const tileRow = Math.floor((tl - 384) / TILESET_COLUMNS);
+            const tileCol = (tl - 384) % TILESET_COLUMNS;
+            patternCounts.set(key, {
+              id: key,
+              layer: z,
+              width: 2,
+              height: 2,
+              tiles: [
+                { dx: 0, dy: 0, tileId: tl },
+                { dx: 1, dy: 0, tileId: tr },
+                { dx: 0, dy: 1, tileId: bl },
+                { dx: 1, dy: 1, tileId: br },
+              ],
+              occurrences: 1
+            });
+          }
+        }
+      }
+    }
+  }
+
+  const blocks = [...patternCounts.values()];
+  blocks.sort((a, b) => b.occurrences - a.occurrences);
+  return blocks;
+}
+
+/**
+ * Fallback: extract horizontal tile pairs (2 wide x 1 tall) from map layers.
+ * Used when no 2x2 blocks are found.
+ */
+function extractTilePairs(layers: number[][][]): TileBlock[] {
+  const patternCounts = new Map<string, TileBlock>();
+
+  for (let z = 0; z < layers.length; z++) {
+    const layer = layers[z];
+    if (!layer) continue;
+    const height = layer.length;
+    const width = layer[0]?.length || 0;
+
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width - 1; x++) {
+        const left = layer[y][x];
+        const right = layer[y][x + 1];
+
+        if (!isRegularTile(left) || !isRegularTile(right)) continue;
+
+        // Adjacent in tileset: same row, consecutive columns
+        const leftRow = Math.floor((left - 384) / TILESET_COLUMNS);
+        const rightRow = Math.floor((right - 384) / TILESET_COLUMNS);
+        if (leftRow === rightRow && right === left + 1) {
+          const key = `h:${z}:${left}`;
+          const existing = patternCounts.get(key);
+          if (existing) {
+            existing.occurrences++;
+          } else {
+            patternCounts.set(key, {
+              id: key,
+              layer: z,
+              width: 2,
+              height: 1,
+              tiles: [
+                { dx: 0, dy: 0, tileId: left },
+                { dx: 1, dy: 0, tileId: right },
+              ],
+              occurrences: 1
+            });
+          }
+        }
+      }
+    }
+  }
+
+  const blocks = [...patternCounts.values()];
+  blocks.sort((a, b) => b.occurrences - a.occurrences);
+  return blocks;
+}
+
+/**
+ * Build a prompt that describes tile objects with their spatial layouts,
+ * so the AI knows how to compose multi-tile objects correctly.
+ */
+function buildObjectPlacementPrompt(
+  blocks: TileBlock[],
+  templateMap: { width: number; height: number },
+  groundTile: number
+): string {
+  const objectLabels = 'ABCDEFGHIJ';
+
+  let objectDescriptions = '';
+  for (let i = 0; i < blocks.length; i++) {
+    const block = blocks[i];
+    const label = objectLabels[i] || `${i}`;
+
+    objectDescriptions += `\nObject ${label} (${block.width}x${block.height}, layer ${block.layer}, seen ${block.occurrences}x in map):\n`;
+    objectDescriptions += `  Grid layout (tile IDs row by row):\n`;
+
+    for (let dy = 0; dy < block.height; dy++) {
+      const rowTiles = block.tiles
+        .filter(t => t.dy === dy)
+        .sort((a, b) => a.dx - b.dx)
+        .map(t => t.tileId);
+      objectDescriptions += `    y+${dy}: [${rowTiles.join(', ')}]\n`;
+    }
+
+    objectDescriptions += `  To place at anchor (X, Y), emit these edits:\n`;
+    for (const tile of block.tiles) {
+      objectDescriptions += `    {"x":X+${tile.dx},"y":Y+${tile.dy},"z":${block.layer},"tile":${tile.tileId}}\n`;
+    }
+  }
+
+  return `You are a map editor for a Pokemon RPG Maker XP game. Your ONLY task is to place COMPLETE multi-tile objects on the map.
+
+CRITICAL RULES:
+- Each object is made of multiple tiles that MUST ALL be placed together
+- A single missing or misplaced tile breaks the visual object
+- You must emit ALL tiles for each object, with correct relative positions
+- NEVER place random individual tiles - always place complete objects
+
+Return JSON ONLY (no markdown, no commentary):
+{
+  "tilePlan": {
+    "name": "Object Placement Test",
+    "edits": [{"x":number,"y":number,"z":0|1|2,"tile":number}, ...],
+    "notes": "Brief description of placements"
+  }
+}
+
+AVAILABLE OBJECTS (multi-tile blocks extracted from the tileset):
+${objectDescriptions}
+TASK: Place exactly 3 complete objects on the map.
+- You may reuse the same object type or mix different types
+- Each placed object MUST include ALL of its tiles with correct relative offsets
+- Map bounds: x 0-${templateMap.width - 1}, y 0-${templateMap.height - 1}
+- Leave at least 2 tiles margin from map edges
+- Space objects at least 4 tiles apart
+- Choose positions in the middle area for visibility
+- Total edits = sum of tiles in all 3 objects (e.g., three 2x2 objects = 12 edits)
+
+Example: To place Object A at position (10, 20), substitute X=10, Y=20 into Object A's edit templates.`.trim();
+}
+
+/**
+ * Validate that AI edits form complete, recognized objects.
+ * Returns the number of complete objects found and any errors.
+ */
+function validateObjectEdits(
+  edits: Array<{ x: number; y: number; z: number; tile: number }>,
+  availableBlocks: TileBlock[]
+): { valid: boolean; objectsFound: number; errors: string[] } {
+  const errors: string[] = [];
+  let objectsFound = 0;
+  const usedEdits = new Set<number>();
+
+  // For each unused edit, try to match it as part of a complete object
+  for (let i = 0; i < edits.length; i++) {
+    if (usedEdits.has(i)) continue;
+
+    let matched = false;
+    for (const block of availableBlocks) {
+      // Check if edit[i] matches any tile in this block
+      for (const anchorTile of block.tiles) {
+        if (edits[i].tile !== anchorTile.tileId || edits[i].z !== block.layer) continue;
+
+        // Derive base position from this edit and the anchor offset
+        const baseX = edits[i].x - anchorTile.dx;
+        const baseY = edits[i].y - anchorTile.dy;
+
+        // Try to find ALL tiles of this block at the derived base position
+        const matchIndices: number[] = [];
+        let allFound = true;
+
+        for (const expected of block.tiles) {
+          const idx = edits.findIndex((e, j) =>
+            !usedEdits.has(j) &&
+            e.x === baseX + expected.dx &&
+            e.y === baseY + expected.dy &&
+            e.z === block.layer &&
+            e.tile === expected.tileId
+          );
+
+          if (idx === -1) {
+            allFound = false;
+            break;
+          }
+          matchIndices.push(idx);
+        }
+
+        if (allFound && matchIndices.length === block.tiles.length) {
+          objectsFound++;
+          matchIndices.forEach(idx => usedEdits.add(idx));
+          matched = true;
+          console.log(`[Object Test] Matched object "${block.id}" at base (${baseX}, ${baseY})`);
+          break;
+        }
+      }
+      if (matched) break;
+    }
+  }
+
+  const unusedCount = edits.length - usedEdits.size;
+  if (unusedCount > 0) {
+    errors.push(`${unusedCount} of ${edits.length} edits don't form complete objects (${usedEdits.size} matched to ${objectsFound} objects)`);
+  }
+
+  if (objectsFound === 0) {
+    errors.push('No complete objects were detected in the edits');
+  }
+
+  return {
+    valid: objectsFound >= 1 && unusedCount === 0,
+    objectsFound,
+    errors
+  };
+}
+
+/**
+ * Object placement test: extracts multi-tile objects from the template map,
+ * asks the AI to place a few coherent objects, and validates the result.
+ */
+async function createObjectTestMap(
+  mapId: number,
+  templateMap: { tilesetId: number; width: number; height: number; layers: number[][][] },
+  tileset: { autotileNames: string[]; passages?: number[]; priorities?: number[] } | undefined,
+  projectPath: string
+) {
+  if (!aiService) {
+    throw new Error('AI is not configured. Please set an API key.');
+  }
+
+  // Step 1: Extract 2x2 tile blocks from the template map
+  let blocks = extractTileBlocks(templateMap.layers);
+  console.log(`[Object Test] Found ${blocks.length} unique 2x2 tile blocks in template map`);
+
+  if (blocks.length === 0) {
+    // Fallback: try horizontal pairs
+    const pairs = extractTilePairs(templateMap.layers);
+    console.log(`[Object Test] No 2x2 blocks found. Found ${pairs.length} tile pairs as fallback.`);
+    if (pairs.length === 0) {
+      throw new Error('Object test failed: no multi-tile objects found in template map.');
+    }
+    blocks = pairs;
+  }
+
+  // Step 2: Pick the top objects (max 5)
+  const topBlocks = blocks.slice(0, 5);
+  console.log(`[Object Test] Using top ${topBlocks.length} objects for AI prompt:`);
+  for (const block of topBlocks) {
+    const tileIds = block.tiles.map(t => t.tileId).join(', ');
+    console.log(`  ${block.id}: ${block.width}x${block.height} on layer ${block.layer}, ${block.occurrences} occurrences, tiles=[${tileIds}]`);
+  }
+
+  // Step 3: Find dominant ground tile for context
+  const groundTiles = findTopTiles(templateMap.layers[0], 3);
+  const groundTile = groundTiles[0] || 384;
+
+  // Step 4: Build the prompt
+  const prompt = buildObjectPlacementPrompt(topBlocks, templateMap, groundTile);
+  console.log(`[Object Test] Prompt length: ${prompt.length} chars`);
+
+  // Step 5: Send to AI
+  const response = await aiService.chat(prompt, { projectPath });
+  console.log('[Object Test] Raw AI response:', JSON.stringify(response, null, 2));
+
+  // Step 6: Extract tile plan from response
+  const plan = extractTilePlan(response);
+  if (!plan?.edits || !Array.isArray(plan.edits) || plan.edits.length === 0) {
+    console.error('[Object Test] Failed to extract valid edits from response');
+    throw new Error('Object test failed: AI did not return valid edits.');
+  }
+
+  console.log(`[Object Test] AI returned ${plan.edits.length} edits`);
+  for (const edit of plan.edits) {
+    console.log(`  (${edit.x}, ${edit.y}, z=${edit.z}) tile=${edit.tile}`);
+  }
+
+  // Step 7: Validate coherence - do edits form complete objects?
+  const validation = validateObjectEdits(plan.edits, topBlocks);
+  console.log(`[Object Test] Validation result: ${validation.objectsFound} complete objects, valid=${validation.valid}`);
+  if (validation.errors.length > 0) {
+    for (const err of validation.errors) {
+      console.warn(`[Object Test] Validation: ${err}`);
+    }
+  }
+
+  // Step 8: Apply edits to template layers
+  const modifiedLayers = applyEditsToLayers(templateMap.layers, plan.edits);
+
+  return {
+    mapData: {
+      id: mapId,
+      name: plan.name || 'Object Placement Test',
+      width: templateMap.width,
+      height: templateMap.height,
+      tilesetId: templateMap.tilesetId,
+      layers: modifiedLayers,
+      events: []
+    },
+    debug: {
+      notes: plan.notes,
+      editsCount: plan.edits.length,
+      objectsAvailable: topBlocks.length,
+      objectsPlaced: validation.objectsFound,
+      validationPassed: validation.valid,
+      validationErrors: validation.errors,
+      coherenceScore: `${validation.objectsFound}/3 complete objects (${plan.edits.length} total edits)`
     }
   };
 }
