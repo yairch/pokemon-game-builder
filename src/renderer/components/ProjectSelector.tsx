@@ -239,7 +239,7 @@ const ProjectSelector: React.FC<ProjectSelectorProps> = ({
     }
   };
 
-  const handleRunMapTest = async (testType: 'ai' | 'sanity') => {
+  const handleRunMapTest = async (testType: 'ai' | 'sanity' | 'object') => {
     if (!currentPath) {
       setMapTestResult({ success: false, message: 'Please select a project first.' });
       return;
@@ -259,7 +259,9 @@ const ProjectSelector: React.FC<ProjectSelectorProps> = ({
       });
       if (result.success) {
         let debug = '';
-        if (result.debug?.editsCount) {
+        if (result.debug?.coherenceScore) {
+          debug = ` [${result.debug.coherenceScore}]`;
+        } else if (result.debug?.editsCount) {
           const bounds = result.debug.editsBounds
             ? ` bounds(${result.debug.editsBounds.minX},${result.debug.editsBounds.minY})-(${result.debug.editsBounds.maxX},${result.debug.editsBounds.maxY})`
             : '';
@@ -553,9 +555,17 @@ const ProjectSelector: React.FC<ProjectSelectorProps> = ({
               onClick={() => handleRunMapTest('ai')}
               disabled={mapTestRunning || !hasApiKey}
               className="px-3 py-2 bg-purple-600 text-white text-xs rounded hover:bg-purple-700 disabled:opacity-50"
-              title={!hasApiKey ? 'AI key required' : 'AI-driven tests'}
+              title={!hasApiKey ? 'AI key required' : 'AI-driven scattered edits'}
             >
               Run AI Tests
+            </button>
+            <button
+              onClick={() => handleRunMapTest('object')}
+              disabled={mapTestRunning || !hasApiKey}
+              className="px-3 py-2 bg-emerald-600 text-white text-xs rounded hover:bg-emerald-700 disabled:opacity-50"
+              title={!hasApiKey ? 'AI key required' : 'Place coherent multi-tile objects (trees, etc.)'}
+            >
+              Object Test
             </button>
           </div>
           {mapTestResult && (
