@@ -154,8 +154,8 @@ api.get('/api/stub/map-spec', (req, res) => {
 });
 
 api.post('/api/compile-map-spec', async (req, res) => {
-  const { projectPath, spec } = req.body;
-  const result = await handleCompileMapSpec(projectPath, spec);
+  const { projectPath, spec, templateMapId } = req.body;
+  const result = await handleCompileMapSpec(projectPath, spec, templateMapId);
   res.json(result);
 });
 
@@ -200,8 +200,9 @@ api.get('/api/read-project-context', async (req, res) => {
 // --- Tileset Inspector Endpoint ---
 api.get('/api/tileset-inspector', async (req, res) => {
   const projectPath = req.query.projectPath as string;
-  const mapName = (req.query.mapName as string) || 'Route 2';
-  const result = await handleTilesetInspector(projectPath, mapName);
+  const mapId = req.query.mapId ? parseInt(req.query.mapId as string, 10) : undefined;
+  const mapName = (req.query.mapName as string) || undefined;
+  const result = await handleTilesetInspector(projectPath, mapId, mapName);
   res.json(result);
 });
 
@@ -232,8 +233,8 @@ api.post('/api/init-project', async (req, res) => {
 });
 
 api.post('/api/chat', async (req, res) => {
-  const { message, projectPath } = req.body;
-  const response = await handleAIChat(message, projectPath);
+  const { message, projectPath, templateMapId } = req.body;
+  const response = await handleAIChat(message, projectPath, templateMapId);
   res.json(response);
 });
 
@@ -283,7 +284,7 @@ async function handleInitProject(projectPath: string) {
   }
 }
 
-async function handleAIChat(message: string, projectPath: string) {
+async function handleAIChat(message: string, projectPath: string, templateMapId?: number | null) {
   return handleChatMapPipeline(
     {
       aiService,
@@ -292,7 +293,8 @@ async function handleAIChat(message: string, projectPath: string) {
       getCurrentProvider: () => getCurrentProvider(config),
     },
     message,
-    projectPath
+    projectPath,
+    templateMapId
   );
 }
 
@@ -321,7 +323,7 @@ function getStubMapSpec(): MapSpec {
   };
 }
 
-async function handleCompileMapSpec(projectPath: string, spec: MapSpec) {
+async function handleCompileMapSpec(projectPath: string, spec: MapSpec, templateMapId?: number | null) {
   if (!projectPath) {
     return { success: false, error: 'Please select a Pokemon Essentials project first.' };
   }
@@ -338,27 +340,13 @@ async function handleCompileMapSpec(projectPath: string, spec: MapSpec) {
   try {
     const nextId = await projectService.getNextMapId();
     let mapData = mapGenerator.compileMapSpec(nextId, spec);
-    const mapFiles = await projectService.getMapList();
-    const mapIds = mapFiles
-      .map((file) => parseInt(file.match(/\d+/)?.[0] || '0', 10))
-      .filter((id) => id > 0)
-      .sort((a, b) => a - b);
 
-    if (mapIds.length > 0) {
-      let templateMapId = mapIds[0];
+    if (templateMapId) {
       let templateMapData: { tilesetId: number; width: number; height: number; layers: number[][][] } | null = null;
-
-      for (const candidateId of mapIds) {
-        try {
-          const candidateMap = await mapGenerator.readMap(projectPath, candidateId);
-          if (candidateMap.tilesetId === mapData.tilesetId) {
-            templateMapId = candidateId;
-            templateMapData = candidateMap;
-            break;
-          }
-        } catch {
-          // Ignore read failures and keep searching
-        }
+      try {
+        templateMapData = await mapGenerator.readMap(projectPath, templateMapId);
+      } catch {
+        return { success: false, error: `Failed to read template map ${templateMapId}.` };
       }
 
       if (templateMapData) {
@@ -370,7 +358,40 @@ async function handleCompileMapSpec(projectPath: string, spec: MapSpec) {
         await mapGenerator.patchMapData(projectPath, nextId, mapData);
       }
     } else {
-      await mapGenerator.generateMapFile(projectPath, nextId, mapData);
+      const mapFiles = await projectService.getMapList();
+      const mapIds = mapFiles
+        .map((file) => parseInt(file.match(/\d+/)?.[0] || '0', 10))
+        .filter((id) => id > 0)
+        .sort((a, b) => a - b);
+
+      if (mapIds.length > 0) {
+        let fallbackTemplateId = mapIds[0];
+        let fallbackTemplateData: { tilesetId: number; width: number; height: number; layers: number[][][] } | null = null;
+
+        for (const candidateId of mapIds) {
+          try {
+            const candidateMap = await mapGenerator.readMap(projectPath, candidateId);
+            if (candidateMap.tilesetId === mapData.tilesetId) {
+              fallbackTemplateId = candidateId;
+              fallbackTemplateData = candidateMap;
+              break;
+            }
+          } catch {
+            // Ignore read failures and keep searching
+          }
+        }
+
+        if (fallbackTemplateData) {
+          mapData = createPatternedMapDataFromTemplate(nextId, spec, fallbackTemplateData);
+        }
+
+        await mapGenerator.cloneMapFile(projectPath, fallbackTemplateId, nextId);
+        if (spec.patchTiles !== false) {
+          await mapGenerator.patchMapData(projectPath, nextId, mapData);
+        }
+      } else {
+        await mapGenerator.generateMapFile(projectPath, nextId, mapData);
+      }
     }
     await mapGenerator.registerMapInInfos(projectPath, nextId, mapData.name);
     return { success: true, mapId: nextId, mapData };
@@ -1514,19 +1535,29 @@ async function handleReadProjectContext(projectPath: string) {
   }
 }
 
-async function handleTilesetInspector(projectPath: string, mapName: string) {
+async function handleTilesetInspector(projectPath: string, mapId?: number, mapName?: string) {
   if (!projectPath) {
     return { success: false, error: 'Project path is required.' };
   }
 
   try {
     const mapInfos = await mapGenerator.readMapInfos(projectPath);
-    const mapEntry = Object.values(mapInfos).find(
-      (info) => info.name.toLowerCase() === mapName.toLowerCase()
-    );
 
-    if (!mapEntry) {
-      return { success: false, error: `Map "${mapName}" not found in MapInfos.` };
+    let mapEntry;
+    if (mapId) {
+      mapEntry = Object.values(mapInfos).find((info) => info.id === mapId);
+      if (!mapEntry) {
+        return { success: false, error: `Map ID ${mapId} not found in MapInfos.` };
+      }
+    } else if (mapName) {
+      mapEntry = Object.values(mapInfos).find(
+        (info) => info.name.toLowerCase() === mapName.toLowerCase()
+      );
+      if (!mapEntry) {
+        return { success: false, error: `Map "${mapName}" not found in MapInfos.` };
+      }
+    } else {
+      return { success: false, error: 'Please provide a map ID or map name.' };
     }
 
     const map = await mapGenerator.readMap(projectPath, mapEntry.id);
@@ -1653,16 +1684,16 @@ ipcMain.handle('init-project', async (event, projectPath) => {
   return handleInitProject(projectPath);
 });
 
-ipcMain.handle('ai-chat', async (event, { message, projectPath }) => {
-  return handleAIChat(message, projectPath);
+ipcMain.handle('ai-chat', async (event, { message, projectPath, templateMapId }) => {
+  return handleAIChat(message, projectPath, templateMapId);
 });
 
 ipcMain.handle('get-stub-map-spec', async () => {
   return getStubMapSpec();
 });
 
-ipcMain.handle('compile-map-spec', async (event, { projectPath, spec }) => {
-  return handleCompileMapSpec(projectPath, spec);
+ipcMain.handle('compile-map-spec', async (event, { projectPath, spec, templateMapId }) => {
+  return handleCompileMapSpec(projectPath, spec, templateMapId);
 });
 
 ipcMain.handle('run-map-test', async (event, { projectPath, mapName, mapId, testType }) => {
@@ -1690,8 +1721,8 @@ ipcMain.handle('read-project-context', async (event, { projectPath }) => {
   return handleReadProjectContext(projectPath);
 });
 
-ipcMain.handle('tileset-inspector', async (event, { projectPath, mapName }) => {
-  return handleTilesetInspector(projectPath, mapName);
+ipcMain.handle('tileset-inspector', async (event, { projectPath, mapId, mapName }) => {
+  return handleTilesetInspector(projectPath, mapId, mapName);
 });
 
 ipcMain.handle('open-external-url', async (event, url) => {

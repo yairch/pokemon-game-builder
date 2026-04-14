@@ -11,6 +11,8 @@ function createMockDeps(overrides: Partial<ChatMapPipelineDeps> = {}): ChatMapPi
     mapGenerator: {
       generateMapFile: vi.fn().mockResolvedValue(undefined),
       registerMapInInfos: vi.fn().mockResolvedValue(undefined),
+      cloneMapFile: vi.fn().mockResolvedValue(undefined),
+      patchMapData: vi.fn().mockResolvedValue(undefined),
     },
     createProjectService: vi.fn().mockReturnValue({
       isValidProject: () => true,
@@ -104,6 +106,8 @@ describe('handleChatMapPipeline', () => {
       mapGenerator: {
         generateMapFile: vi.fn().mockRejectedValue(new Error('Ruby not found')),
         registerMapInInfos: vi.fn().mockResolvedValue(undefined),
+        cloneMapFile: vi.fn().mockResolvedValue(undefined),
+        patchMapData: vi.fn().mockResolvedValue(undefined),
       },
     });
 
