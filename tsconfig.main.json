@@ -13,5 +13,6 @@
     "resolveJsonModule": true,
     "noEmit": false
   },
-  "include": ["src/main/**/*", "src/shared/**/*"]
+  "include": ["src/main/**/*", "src/shared/**/*"],
+  "exclude": ["src/main/__tests__/**"]
 }

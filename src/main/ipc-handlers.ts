@@ -4,6 +4,8 @@ import { AIServiceFactory } from './ai-service-factory';
 import { ProjectService } from './project-service';
 import { MapGenerator } from './map-generator';
 import { MapSpec, TilesetInspectorData } from '../shared/types';
+import { TILESET_COLUMNS, TileBlock, isRegularTile, is2x2TilesetBlock, extractTileBlocks, extractTilePairs } from './tile-utils';
+import { handleChatMapPipeline } from './chat-map-pipeline';
 import * as path from 'path';
 import { pathToFileURL } from 'url';
 import * as fs from 'fs-extra';
@@ -282,41 +284,16 @@ async function handleInitProject(projectPath: string) {
 }
 
 async function handleAIChat(message: string, projectPath: string) {
-  if (!aiService) {
-    const provider = getCurrentProvider(config);
-    return { text: `Please set your ${provider === 'claude' ? 'Claude' : 'Gemini'} API key.` };
-  }
-
-  if (!projectPath) {
-    return { text: "Please select a Pokemon Essentials project first." };
-  }
-
-  const projectService = new ProjectService(projectPath);
-  if (!projectService.isValidProject()) {
-    return { text: "The selected directory does not appear to be a valid Pokemon Essentials project." };
-  }
-
-  const context = { projectPath };
-
-  try {
-    const response = await aiService.chat(message, context);
-    
-    if (response.mapData) {
-      const nextId = await projectService.getNextMapId();
-      response.mapData.id = nextId;
-      
-      try {
-        await mapGenerator.generateMapFile(projectPath, nextId, response.mapData);
-        response.text += `\n\nGenerated map "${response.mapData.name}" as Map${nextId.toString().padStart(3, '0')}.rxdata.`;
-      } catch (err: any) {
-        response.text += `\n\nFailed to generate map file: ${err.message}`;
-      }
-    }
-
-    return response;
-  } catch (error: any) {
-    return { text: `Error: ${error.message}` };
-  }
+  return handleChatMapPipeline(
+    {
+      aiService,
+      mapGenerator,
+      createProjectService: (p) => new ProjectService(p),
+      getCurrentProvider: () => getCurrentProvider(config),
+    },
+    message,
+    projectPath
+  );
 }
 
 function getStubMapSpec(): MapSpec {
@@ -765,149 +742,8 @@ Be CREATIVE and make each design UNIQUE!
 // multi-tile objects (trees, rocks, etc.) from tileset
 // ============================================================
 
-const TILESET_COLUMNS = 8; // RPG Maker XP tilesets are 8 tiles wide (256px / 32px)
-
-interface TileBlock {
-  id: string;
-  layer: number;
-  width: number;
-  height: number;
-  tiles: Array<{ dx: number; dy: number; tileId: number }>;
-  occurrences: number;
-}
-
-/**
- * Check if a tile is a regular tileset tile (not autotile, not empty).
- * Autotiles occupy IDs 48-383, regular tiles start at 384.
- */
-function isRegularTile(tileId: number): boolean {
-  return tileId >= 384;
-}
-
-/**
- * Check if four tiles form a 2x2 block where IDs are adjacent in the tileset grid.
- * In RPG Maker XP, the tileset image is 8 tiles wide, so:
- *   - Horizontal neighbor: tileId + 1 (same row in tileset)
- *   - Vertical neighbor: tileId + 8 (next row in tileset)
- */
-function is2x2TilesetBlock(tl: number, tr: number, bl: number, br: number): boolean {
-  if (!isRegularTile(tl) || !isRegularTile(tr) || !isRegularTile(bl) || !isRegularTile(br)) {
-    return false;
-  }
-  // tl and tr must be same tileset row, consecutive columns
-  // bl and br must be the row directly below tl and tr
-  return (
-    tr === tl + 1 &&
-    bl === tl + TILESET_COLUMNS &&
-    br === tl + TILESET_COLUMNS + 1
-  );
-}
-
-/**
- * Extract 2x2 multi-tile objects from map layers by finding groups of tiles
- * that are adjacent both in map space and in the tileset grid.
- * Returns deduplicated blocks sorted by occurrence frequency.
- */
-function extractTileBlocks(layers: number[][][]): TileBlock[] {
-  const patternCounts = new Map<string, TileBlock>();
-
-  for (let z = 0; z < layers.length; z++) {
-    const layer = layers[z];
-    if (!layer) continue;
-    const height = layer.length;
-    const width = layer[0]?.length || 0;
-
-    for (let y = 0; y < height - 1; y++) {
-      for (let x = 0; x < width - 1; x++) {
-        const tl = layer[y][x];
-        const tr = layer[y][x + 1];
-        const bl = layer[y + 1]?.[x];
-        const br = layer[y + 1]?.[x + 1];
-
-        if (tl === undefined || tr === undefined || bl === undefined || br === undefined) continue;
-
-        if (is2x2TilesetBlock(tl, tr, bl, br)) {
-          const key = `${z}:${tl}`;
-          const existing = patternCounts.get(key);
-          if (existing) {
-            existing.occurrences++;
-          } else {
-            const tileRow = Math.floor((tl - 384) / TILESET_COLUMNS);
-            const tileCol = (tl - 384) % TILESET_COLUMNS;
-            patternCounts.set(key, {
-              id: key,
-              layer: z,
-              width: 2,
-              height: 2,
-              tiles: [
-                { dx: 0, dy: 0, tileId: tl },
-                { dx: 1, dy: 0, tileId: tr },
-                { dx: 0, dy: 1, tileId: bl },
-                { dx: 1, dy: 1, tileId: br },
-              ],
-              occurrences: 1
-            });
-          }
-        }
-      }
-    }
-  }
-
-  const blocks = [...patternCounts.values()];
-  blocks.sort((a, b) => b.occurrences - a.occurrences);
-  return blocks;
-}
-
-/**
- * Fallback: extract horizontal tile pairs (2 wide x 1 tall) from map layers.
- * Used when no 2x2 blocks are found.
- */
-function extractTilePairs(layers: number[][][]): TileBlock[] {
-  const patternCounts = new Map<string, TileBlock>();
-
-  for (let z = 0; z < layers.length; z++) {
-    const layer = layers[z];
-    if (!layer) continue;
-    const height = layer.length;
-    const width = layer[0]?.length || 0;
-
-    for (let y = 0; y < height; y++) {
-      for (let x = 0; x < width - 1; x++) {
-        const left = layer[y][x];
-        const right = layer[y][x + 1];
-
-        if (!isRegularTile(left) || !isRegularTile(right)) continue;
-
-        // Adjacent in tileset: same row, consecutive columns
-        const leftRow = Math.floor((left - 384) / TILESET_COLUMNS);
-        const rightRow = Math.floor((right - 384) / TILESET_COLUMNS);
-        if (leftRow === rightRow && right === left + 1) {
-          const key = `h:${z}:${left}`;
-          const existing = patternCounts.get(key);
-          if (existing) {
-            existing.occurrences++;
-          } else {
-            patternCounts.set(key, {
-              id: key,
-              layer: z,
-              width: 2,
-              height: 1,
-              tiles: [
-                { dx: 0, dy: 0, tileId: left },
-                { dx: 1, dy: 0, tileId: right },
-              ],
-              occurrences: 1
-            });
-          }
-        }
-      }
-    }
-  }
-
-  const blocks = [...patternCounts.values()];
-  blocks.sort((a, b) => b.occurrences - a.occurrences);
-  return blocks;
-}
+// Tile utility functions (TILESET_COLUMNS, TileBlock, isRegularTile,
+// is2x2TilesetBlock, extractTileBlocks, extractTilePairs) imported from ./tile-utils
 
 /**
  * Build a prompt that describes tile objects with their spatial layouts,
