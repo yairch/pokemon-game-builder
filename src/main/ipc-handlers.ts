@@ -396,6 +396,7 @@ async function handleCompileMapSpec(projectPath: string, spec: MapSpec, template
     await mapGenerator.registerMapInInfos(projectPath, nextId, mapData.name);
     return { success: true, mapId: nextId, mapData };
   } catch (error: any) {
+    console.error('[handleCompileMapSpec] Error:', error.message || error);
     return { success: false, error: error.message || 'Failed to compile map spec.' };
   }
 }
@@ -541,6 +542,7 @@ async function handleRunMapTest(projectPath: string, mapName: string, mapId: num
       sourceMapName: mapEntry.name
     };
   } catch (error: any) {
+    console.error('[handleRunMapTest] Error:', error.message || error);
     return { success: false, error: error.message || 'Failed to run map test.' };
   }
 }
@@ -1461,6 +1463,7 @@ async function handleReadMap(projectPath: string, mapId: number) {
     const data = await mapGenerator.readMap(projectPath, mapId);
     return { success: true, data };
   } catch (error: any) {
+    console.error('[handleReadMap] Error:', error.message || error);
     return { success: false, error: error.message || 'Failed to read map.' };
   }
 }
@@ -1474,6 +1477,7 @@ async function handleReadMapInfos(projectPath: string) {
     const data = await mapGenerator.readMapInfos(projectPath);
     return { success: true, data };
   } catch (error: any) {
+    console.error('[handleReadMapInfos] Error:', error.message || error);
     return { success: false, error: error.message || 'Failed to read map infos.' };
   }
 }
@@ -1487,6 +1491,7 @@ async function handleReadTilesets(projectPath: string) {
     const data = await mapGenerator.readTilesets(projectPath);
     return { success: true, data };
   } catch (error: any) {
+    console.error('[handleReadTilesets] Error:', error.message || error);
     return { success: false, error: error.message || 'Failed to read tilesets.' };
   }
 }
@@ -1500,6 +1505,7 @@ async function handleReadSystem(projectPath: string) {
     const data = await mapGenerator.readSystem(projectPath);
     return { success: true, data };
   } catch (error: any) {
+    console.error('[handleReadSystem] Error:', error.message || error);
     return { success: false, error: error.message || 'Failed to read system data.' };
   }
 }
@@ -1531,6 +1537,7 @@ async function handleReadProjectContext(projectPath: string) {
       }
     };
   } catch (error: any) {
+    console.error('[handleReadProjectContext] Error:', error.message || error);
     return { success: false, error: error.message || 'Failed to read project context.' };
   }
 }
@@ -1595,6 +1602,7 @@ async function handleTilesetInspector(projectPath: string, mapId?: number, mapNa
 
     return { success: true, data };
   } catch (error: any) {
+    console.error('[handleTilesetInspector] Error:', error.message || error);
     return { success: false, error: error.message || 'Failed to load tileset inspector data.' };
   }
 }
