@@ -5,6 +5,7 @@ import { ProjectService } from './project-service';
 import { MapGenerator } from './map-generator';
 import { MapSpec, TilesetInspectorData } from '../shared/types';
 import { TILESET_COLUMNS, TileBlock, isRegularTile, is2x2TilesetBlock, extractTileBlocks, extractTilePairs } from './tile-utils';
+import { handleChatMapPipeline } from './chat-map-pipeline';
 import * as path from 'path';
 import { pathToFileURL } from 'url';
 import * as fs from 'fs-extra';
@@ -283,41 +284,16 @@ async function handleInitProject(projectPath: string) {
 }
 
 async function handleAIChat(message: string, projectPath: string) {
-  if (!aiService) {
-    const provider = getCurrentProvider(config);
-    return { text: `Please set your ${provider === 'claude' ? 'Claude' : 'Gemini'} API key.` };
-  }
-
-  if (!projectPath) {
-    return { text: "Please select a Pokemon Essentials project first." };
-  }
-
-  const projectService = new ProjectService(projectPath);
-  if (!projectService.isValidProject()) {
-    return { text: "The selected directory does not appear to be a valid Pokemon Essentials project." };
-  }
-
-  const context = { projectPath };
-
-  try {
-    const response = await aiService.chat(message, context);
-    
-    if (response.mapData) {
-      const nextId = await projectService.getNextMapId();
-      response.mapData.id = nextId;
-      
-      try {
-        await mapGenerator.generateMapFile(projectPath, nextId, response.mapData);
-        response.text += `\n\nGenerated map "${response.mapData.name}" as Map${nextId.toString().padStart(3, '0')}.rxdata.`;
-      } catch (err: any) {
-        response.text += `\n\nFailed to generate map file: ${err.message}`;
-      }
-    }
-
-    return response;
-  } catch (error: any) {
-    return { text: `Error: ${error.message}` };
-  }
+  return handleChatMapPipeline(
+    {
+      aiService,
+      mapGenerator,
+      createProjectService: (p) => new ProjectService(p),
+      getCurrentProvider: () => getCurrentProvider(config),
+    },
+    message,
+    projectPath
+  );
 }
 
 function getStubMapSpec(): MapSpec {
