@@ -160,16 +160,21 @@ export class MapGenerator {
     });
   }
 
-  async patchMapData(projectPath: string, mapId: number, mapData: MapData, useRubyPatch: boolean = true): Promise<void> {
+  async patchMapData(
+    projectPath: string,
+    mapId: number,
+    mapData: MapData,
+    useRubyPatch: boolean = true,
+    preserveEvents: boolean = true
+  ): Promise<void> {
     const mapFilePath = path.join(projectPath, 'Data', `Map${mapId.toString().padStart(3, '0')}.rxdata`);
 
     if (useRubyPatch) {
-      // Use Ruby Marshal-based patching which preserves structure better
-      // Pass JSON via stdin to avoid ENAMETOOLONG error with large maps
+      const rubyCommand = preserveEvents ? 'patch_map_tiles' : 'patch_map_data';
       return new Promise((resolve, reject) => {
         const rubyProcess = spawn(this.rubyBinary, [
           this.rubyScriptPath,
-          'patch_map_data',
+          rubyCommand,
           mapFilePath
         ], {
           stdio: ['pipe', 'pipe', 'pipe']
