@@ -126,8 +126,11 @@ export const bridge = {
           return res.json();
         }
         case 'tileset-inspector': {
-          const { projectPath, mapName } = data;
-          const res = await fetch(`${API_BASE}/tileset-inspector?projectPath=${encodeURIComponent(projectPath)}&mapName=${encodeURIComponent(mapName)}`);
+          const { projectPath, mapId, mapName } = data;
+          let url = `${API_BASE}/tileset-inspector?projectPath=${encodeURIComponent(projectPath)}`;
+          if (mapId) url += `&mapId=${mapId}`;
+          if (mapName) url += `&mapName=${encodeURIComponent(mapName)}`;
+          const res = await fetch(url);
           return res.json();
         }
         case 'ping': {

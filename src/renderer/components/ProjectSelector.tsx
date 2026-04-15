@@ -5,6 +5,11 @@ import { TilesetInspectorData } from '../../shared/types';
 
 type AIProvider = 'claude' | 'gemini';
 
+interface MapListEntry {
+  id: number;
+  name: string;
+}
+
 interface ProjectSelectorProps {
   onProjectSelect: (path: string) => void;
   currentPath: string | null;
@@ -12,6 +17,8 @@ interface ProjectSelectorProps {
   onSaveApiKey: (key: string) => void;
   keyVersion: number;
   onProviderChange?: () => void;
+  selectedTemplateMapId: number | null;
+  onTemplateMapChange: (mapId: number | null) => void;
 }
 
 const ProjectSelector: React.FC<ProjectSelectorProps> = ({ 
@@ -20,7 +27,9 @@ const ProjectSelector: React.FC<ProjectSelectorProps> = ({
   hasApiKey, 
   onSaveApiKey,
   keyVersion,
-  onProviderChange
+  onProviderChange,
+  selectedTemplateMapId,
+  onTemplateMapChange
 }) => {
   const [newProjectPath, setNewProjectPath] = useState<string | null>(null);
   const [isInitializing, setIsInitializing] = useState(false);
@@ -35,8 +44,8 @@ const ProjectSelector: React.FC<ProjectSelectorProps> = ({
   const [tilesetInspector, setTilesetInspector] = useState<TilesetInspectorData | null>(null);
   const [tilesetInspectorError, setTilesetInspectorError] = useState('');
   const [tilesetInspectorLoading, setTilesetInspectorLoading] = useState(false);
-  const [tilesetMapName, setTilesetMapName] = useState('Route 2');
-  const [tilesetMapId, setTilesetMapId] = useState<number | null>(null);
+  const [mapList, setMapList] = useState<MapListEntry[]>([]);
+  const [mapListLoading, setMapListLoading] = useState(false);
   const tilesetCanvasRef = useRef<HTMLCanvasElement>(null);
   const tilesetImageRef = useRef<HTMLImageElement>(null);
   const [mapTestRunning, setMapTestRunning] = useState(false);
@@ -131,6 +140,41 @@ const ProjectSelector: React.FC<ProjectSelectorProps> = ({
     }
   }, [tilesetInspector]);
 
+  useEffect(() => {
+    if (!currentPath) {
+      setMapList([]);
+      onTemplateMapChange(null);
+      return;
+    }
+    let cancelled = false;
+    const fetchMaps = async () => {
+      setMapListLoading(true);
+      try {
+        const result = await bridge.invoke('read-map-infos', { projectPath: currentPath });
+        if (cancelled) return;
+        if (!result?.success || !result?.data) {
+          console.error('read-map-infos failed:', result?.error ?? result);
+          setMapList([]);
+          return;
+        }
+        const entries: MapListEntry[] = Object.values(result.data)
+          .map((info: any) => ({ id: info.id as number, name: info.name as string }))
+          .sort((a, b) => a.id - b.id);
+        setMapList(entries);
+        if (entries.length > 0 && selectedTemplateMapId === null) {
+          onTemplateMapChange(entries[0].id);
+        }
+      } catch (e) {
+        console.error('Failed to fetch map list:', e);
+        if (!cancelled) setMapList([]);
+      } finally {
+        if (!cancelled) setMapListLoading(false);
+      }
+    };
+    fetchMaps();
+    return () => { cancelled = true; };
+  }, [currentPath]);
+
   const handleProviderChange = async (provider: AIProvider) => {
     if (provider === currentProvider) return; // Already on this provider
     
@@ -217,16 +261,20 @@ const ProjectSelector: React.FC<ProjectSelectorProps> = ({
       setTilesetInspector(null);
       return;
     }
+    if (!selectedTemplateMapId) {
+      setTilesetInspectorError('Please select a template map first.');
+      setTilesetInspector(null);
+      return;
+    }
     setTilesetInspectorError('');
     setTilesetInspectorLoading(true);
     try {
       const result = await bridge.invoke('tileset-inspector', {
         projectPath: currentPath,
-        mapName: tilesetMapName
+        mapId: selectedTemplateMapId
       });
       if (result.success) {
         setTilesetInspector(result.data);
-        setTilesetMapId(result.data.mapId);
       } else {
         setTilesetInspector(null);
         setTilesetInspectorError(result.error || 'Failed to load tileset inspector.');
@@ -244,17 +292,18 @@ const ProjectSelector: React.FC<ProjectSelectorProps> = ({
       setMapTestResult({ success: false, message: 'Please select a project first.' });
       return;
     }
-    if (!tilesetMapId) {
-      setMapTestResult({ success: false, message: 'Please open Tileset Inspector for a map first.' });
+    if (!selectedTemplateMapId) {
+      setMapTestResult({ success: false, message: 'Please select a template map first.' });
       return;
     }
     setMapTestRunning(true);
     setMapTestResult(null);
     try {
+      const selectedMap = mapList.find((m) => m.id === selectedTemplateMapId);
       const result = await bridge.invoke('run-map-test', {
         projectPath: currentPath,
-        mapName: tilesetMapName,
-        mapId: tilesetMapId ?? undefined,
+        mapName: selectedMap?.name ?? `Map${selectedTemplateMapId}`,
+        mapId: selectedTemplateMapId,
         testType
       });
       if (result.success) {
@@ -520,19 +569,36 @@ const ProjectSelector: React.FC<ProjectSelectorProps> = ({
       </div>
 
       <div className="mt-6 pt-4 border-t border-gray-200">
-        <h3 className="text-sm font-medium text-gray-700 uppercase tracking-wider mb-2">Tileset Inspector</h3>
+        <h3 className="text-sm font-medium text-gray-700 uppercase tracking-wider mb-2">Template Map</h3>
         <div className="flex gap-2">
-          <input
-            type="text"
-            value={tilesetMapName}
-            onChange={(e) => setTilesetMapName(e.target.value)}
-            placeholder="Map name (e.g., Route 2)"
-            className="flex-1 px-3 py-2 text-xs border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
-          />
+          <select
+            value={selectedTemplateMapId ?? ''}
+            onChange={(e) => {
+              const val = e.target.value;
+              onTemplateMapChange(val === '' ? null : Number(val));
+            }}
+            disabled={!currentPath || mapListLoading}
+            className="flex-1 px-3 py-2 text-xs border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 bg-white disabled:bg-gray-100 disabled:text-gray-400 disabled:cursor-not-allowed"
+          >
+            {!currentPath ? (
+              <option value="">Select a project first</option>
+            ) : mapListLoading ? (
+              <option value="">Loading maps...</option>
+            ) : (
+              <>
+                <option value="">None (blank map)</option>
+                {mapList.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    Map{String(m.id).padStart(3, '0')} -- {m.name}
+                  </option>
+                ))}
+              </>
+            )}
+          </select>
           <button
             onClick={handleOpenTilesetInspector}
-            disabled={tilesetInspectorLoading}
-            className="px-3 py-2 bg-gray-800 text-white text-xs rounded hover:bg-black disabled:opacity-50"
+            disabled={tilesetInspectorLoading || !selectedTemplateMapId}
+            className="px-3 py-2 bg-gray-800 text-white text-xs rounded hover:bg-black disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {tilesetInspectorLoading ? 'Loading...' : 'Show Tileset IDs'}
           </button>
@@ -546,24 +612,24 @@ const ProjectSelector: React.FC<ProjectSelectorProps> = ({
           <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
             <button
               onClick={() => handleRunMapTest('sanity')}
-              disabled={mapTestRunning}
-              className="px-3 py-2 bg-slate-700 text-white text-xs rounded hover:bg-slate-800 disabled:opacity-50"
+              disabled={mapTestRunning || !selectedTemplateMapId}
+              className="px-3 py-2 bg-slate-700 text-white text-xs rounded hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               Sanity Test
             </button>
             <button
               onClick={() => handleRunMapTest('ai')}
-              disabled={mapTestRunning || !hasApiKey}
-              className="px-3 py-2 bg-purple-600 text-white text-xs rounded hover:bg-purple-700 disabled:opacity-50"
-              title={!hasApiKey ? 'AI key required' : 'AI-driven scattered edits'}
+              disabled={mapTestRunning || !hasApiKey || !selectedTemplateMapId}
+              className="px-3 py-2 bg-purple-600 text-white text-xs rounded hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              title={!hasApiKey ? 'AI key required' : !selectedTemplateMapId ? 'Select a template map' : 'AI-driven scattered edits'}
             >
               Run AI Tests
             </button>
             <button
               onClick={() => handleRunMapTest('object')}
-              disabled={mapTestRunning || !hasApiKey}
-              className="px-3 py-2 bg-emerald-600 text-white text-xs rounded hover:bg-emerald-700 disabled:opacity-50"
-              title={!hasApiKey ? 'AI key required' : 'Place coherent multi-tile objects (trees, etc.)'}
+              disabled={mapTestRunning || !hasApiKey || !selectedTemplateMapId}
+              className="px-3 py-2 bg-emerald-600 text-white text-xs rounded hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              title={!hasApiKey ? 'AI key required' : !selectedTemplateMapId ? 'Select a template map' : 'Place coherent multi-tile objects (trees, etc.)'}
             >
               Object Test
             </button>

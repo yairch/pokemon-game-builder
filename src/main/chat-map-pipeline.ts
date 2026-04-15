@@ -3,6 +3,8 @@ import { IAIService } from './ai-service-base';
 export interface MapGeneratorLike {
   generateMapFile(projectPath: string, mapId: number, mapData: any): Promise<void>;
   registerMapInInfos(projectPath: string, mapId: number, name: string): Promise<void>;
+  cloneMapFile(projectPath: string, sourceMapId: number, targetMapId: number): Promise<void>;
+  patchMapData(projectPath: string, mapId: number, mapData: any): Promise<void>;
 }
 
 export interface ProjectServiceLike {
@@ -20,7 +22,8 @@ export interface ChatMapPipelineDeps {
 export async function handleChatMapPipeline(
   deps: ChatMapPipelineDeps,
   message: string,
-  projectPath: string
+  projectPath: string,
+  templateMapId?: number | null
 ): Promise<any> {
   const { aiService, mapGenerator, createProjectService, getCurrentProvider } = deps;
 
@@ -48,9 +51,15 @@ export async function handleChatMapPipeline(
       response.mapData.id = nextId;
 
       try {
-        await mapGenerator.generateMapFile(projectPath, nextId, response.mapData);
+        if (templateMapId) {
+          await mapGenerator.cloneMapFile(projectPath, templateMapId, nextId);
+          await mapGenerator.patchMapData(projectPath, nextId, response.mapData);
+        } else {
+          await mapGenerator.generateMapFile(projectPath, nextId, response.mapData);
+        }
         await mapGenerator.registerMapInInfos(projectPath, nextId, response.mapData.name);
-        response.text += `\n\nGenerated map "${response.mapData.name}" as Map${nextId.toString().padStart(3, '0')}.rxdata.`;
+        const baseInfo = templateMapId ? ` (based on Map${String(templateMapId).padStart(3, '0')})` : '';
+        response.text += `\n\nGenerated map "${response.mapData.name}" as Map${nextId.toString().padStart(3, '0')}.rxdata${baseInfo}.`;
       } catch (err: any) {
         response.text += `\n\nFailed to generate map file: ${err.message}`;
       }

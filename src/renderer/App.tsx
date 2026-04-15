@@ -14,8 +14,9 @@ const App: React.FC = () => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [currentMap, setCurrentMap] = useState<any>(null);
-  const [hasApiKey, setHasApiKey] = useState<boolean | null>(null); // null means still checking
+  const [hasApiKey, setHasApiKey] = useState<boolean | null>(null);
   const [keyVersion, setKeyVersion] = useState(0);
+  const [selectedTemplateMapId, setSelectedTemplateMapId] = useState<number | null>(null);
 
   useEffect(() => {
     // Check if API key exists on startup
@@ -35,6 +36,7 @@ const App: React.FC = () => {
       const response = await bridge.invoke('ai-chat', {
         message: content,
         projectPath,
+        templateMapId: selectedTemplateMapId,
       });
 
       setMessages((prev) => [...prev, { role: 'assistant', content: response.text }]);
@@ -61,7 +63,8 @@ const App: React.FC = () => {
       const spec = await bridge.invoke('get-stub-map-spec');
       const result = await bridge.invoke('compile-map-spec', {
         projectPath,
-        spec
+        spec,
+        templateMapId: selectedTemplateMapId,
       });
 
       if (result.success) {
@@ -122,6 +125,8 @@ const App: React.FC = () => {
             onSaveApiKey={handleSaveApiKey}
             keyVersion={keyVersion}
             onProviderChange={handleProviderChange}
+            selectedTemplateMapId={selectedTemplateMapId}
+            onTemplateMapChange={setSelectedTemplateMapId}
           />
           <MapPreview mapData={currentMap} />
           
