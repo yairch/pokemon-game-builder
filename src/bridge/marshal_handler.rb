@@ -216,6 +216,48 @@ class Table
   end
 end
 
+# RMXP built-in Tone (red, green, blue, gray) -- used in screen tints, fog, etc.
+class Tone
+  attr_accessor :red, :green, :blue, :gray
+
+  def initialize(red = 0, green = 0, blue = 0, gray = 0)
+    @red = red.to_f
+    @green = green.to_f
+    @blue = blue.to_f
+    @gray = gray.to_f
+  end
+
+  def _dump(limit)
+    [@red, @green, @blue, @gray].pack("EEEE")
+  end
+
+  def self._load(obj)
+    r, g, b, a = obj.unpack("EEEE")
+    Tone.new(r, g, b, a)
+  end
+end
+
+# RMXP built-in Color (red, green, blue, alpha) -- used in flash colors, etc.
+class Color
+  attr_accessor :red, :green, :blue, :alpha
+
+  def initialize(red = 0, green = 0, blue = 0, alpha = 255)
+    @red = red.to_f
+    @green = green.to_f
+    @blue = blue.to_f
+    @alpha = alpha.to_f
+  end
+
+  def _dump(limit)
+    [@red, @green, @blue, @alpha].pack("EEEE")
+  end
+
+  def self._load(obj)
+    r, g, b, a = obj.unpack("EEEE")
+    Color.new(r, g, b, a)
+  end
+end
+
 def create_map(file_path, map_data_json = nil)
   # Read JSON from stdin if not provided as argument (for large data)
   json_string = map_data_json

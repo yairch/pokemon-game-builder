@@ -1,7 +1,12 @@
 import { spawn } from 'child_process';
 import * as path from 'path';
 import * as fs from 'fs-extra';
-import { app } from 'electron';
+let electronApp: { getAppPath(): string } | null = null;
+try {
+  electronApp = require('electron').app;
+} catch {
+  // Running outside Electron (browser-server mode)
+}
 import {
   MapData,
   MapSpec,
@@ -22,7 +27,8 @@ export class MapGenerator {
   }
 
   private resolveRubyBridgePath(): string {
-    const packagedPath = path.join(app.getAppPath(), 'dist', 'bridge', 'marshal_handler.rb');
+    const appPath = electronApp?.getAppPath() ?? process.cwd();
+    const packagedPath = path.join(appPath, 'dist', 'bridge', 'marshal_handler.rb');
     if (fs.existsSync(packagedPath)) {
       return packagedPath;
     }
