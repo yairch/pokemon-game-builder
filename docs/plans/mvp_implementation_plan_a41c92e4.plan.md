@@ -57,6 +57,8 @@ isProject: false
 **Test framework**: Vitest
 **Plan location**: `docs/plans/`
 
+**GUI / workbench companion:** [`gui_editor_mvp_roadmap.md`](./gui_editor_mvp_roadmap.md) — map tree, layer UX, palette integration, and post-MVP editing (paint tools, right-click menus).
+
 ---
 
 ## Current State Summary
