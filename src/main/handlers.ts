@@ -417,13 +417,16 @@ export async function handleTilesetInspector(projectPath: string, mapId?: number
     if (!tileset) return { success: false, error: `Tileset ${map.tilesetId} not found.` };
 
     const tilesetImagePath = resolveTilesetImagePath(projectPath, tileset.tilesetName);
-    const autotileImagePaths = tileset.autotileNames.filter((n) => !!n).map((n) => resolveAutotileImagePath(projectPath, n));
+    const names = tileset.autotileNames || [];
+    const autotileImagePaths = names.map((n) => (n ? resolveAutotileImagePath(projectPath, n) : ''));
+    const autotileImageUrls = autotileImagePaths.map((p) => (p ? toFileUrl(p) : ''));
+    const autotileImageDataUrls = autotileImagePaths.map((p) => (p ? toDataUrl(p) : ''));
 
     const data: TilesetInspectorData = {
       mapName: mapEntry.name, mapId: mapEntry.id,
       tilesetId: map.tilesetId, tilesetName: tileset.tilesetName,
       tilesetImagePath, tilesetImageUrl: toFileUrl(tilesetImagePath), tilesetImageDataUrl: toDataUrl(tilesetImagePath),
-      autotileImagePaths, autotileImageUrls: autotileImagePaths.map(toFileUrl), autotileImageDataUrls: autotileImagePaths.map(toDataUrl),
+      autotileImagePaths, autotileImageUrls, autotileImageDataUrls,
       tileWidth: 32, tileHeight: 32
     };
     return { success: true, data };
