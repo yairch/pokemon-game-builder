@@ -224,18 +224,26 @@ const ProjectSelector: React.FC<ProjectSelectorProps> = ({
     }
   };
 
+  const isBrowserMode = !window.electron;
+
   const handleSelectExisting = async () => {
-    const path = await bridge.invoke('select-directory');
-    if (path) {
-      onProjectSelect(path);
+    if (isBrowserMode) {
+      const typed = prompt('Enter the full path to your Pokemon Essentials project:');
+      if (typed?.trim()) onProjectSelect(typed.trim());
+      return;
     }
+    const path = await bridge.invoke('select-directory');
+    if (path) onProjectSelect(path);
   };
 
   const handleSelectNewDestination = async () => {
-    const path = await bridge.invoke('select-directory');
-    if (path) {
-      setNewProjectPath(path);
+    if (isBrowserMode) {
+      const typed = prompt('Enter the full path for the new project:');
+      if (typed?.trim()) setNewProjectPath(typed.trim());
+      return;
     }
+    const path = await bridge.invoke('select-directory');
+    if (path) setNewProjectPath(path);
   };
 
   const handleInit = async () => {
