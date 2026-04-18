@@ -8,3 +8,4 @@ templates/
 
 # API Keys and sensitive configuration
 src/main/constants.ts
+config.json
