@@ -420,6 +420,81 @@ def patch_map_data(file_path, map_data_json = nil)
   puts "Map data patched for #{file_path}"
 end
 
+def patch_map_tiles(file_path, map_data_json = nil)
+  unless File.exist?(file_path)
+    puts JSON.generate({ error: "Map file not found: #{file_path}" })
+    return
+  end
+
+  json_string = map_data_json
+  if json_string.nil? || json_string.empty?
+    json_string = STDIN.read
+  end
+
+  data = JSON.parse(json_string)
+  map = File.open(file_path, 'rb') { |f| Marshal.load(f) }
+
+  layers = data['layers'] || data['data'] || []
+
+  if layers.empty? || layers[0].nil? || layers[0].empty?
+    puts JSON.generate({ error: "Invalid layers data: empty or nil" })
+    return
+  end
+
+  layer_width = layers[0].first&.length || 0
+  layer_height = layers[0].length || 0
+
+  puts "Patching tiles (preserving events): file=#{file_path}"
+  puts "Map dimensions: #{map.width}x#{map.height}, events: #{(map.events || {}).size}, encounters: #{(map.encounter_list || []).size}"
+  puts "Layer dimensions: #{layer_width}x#{layer_height}"
+
+  if layer_width != map.width || layer_height != map.height
+    error_msg = "Dimension mismatch! Map: #{map.width}x#{map.height}, Layers: #{layer_width}x#{layer_height}"
+    puts JSON.generate({ error: error_msg })
+    STDERR.puts error_msg
+    return
+  end
+
+  tiles_written = 0
+  tiles_skipped = 0
+
+  (0...3).each do |z|
+    layer = layers[z]
+    next if layer.nil?
+
+    (0...map.height).each do |y|
+      row = layer[y]
+      next if row.nil?
+
+      (0...map.width).each do |x|
+        new_tile = row[x]
+        next if new_tile.nil?
+
+        if !new_tile.is_a?(Integer) || new_tile < 0 || new_tile > 65535
+          STDERR.puts "Invalid tile value at [#{x},#{y},#{z}]: #{new_tile.inspect}"
+          tiles_skipped += 1
+          next
+        end
+
+        original_tile = map.data[x, y, z]
+        if new_tile != original_tile
+          map.data[x, y, z] = new_tile
+          tiles_written += 1
+        else
+          tiles_skipped += 1
+        end
+      end
+    end
+  end
+
+  puts "Wrote #{tiles_written} changed tiles, skipped #{tiles_skipped} unchanged tiles"
+
+  File.open(file_path, 'wb') do |f|
+    Marshal.dump(map, f)
+  end
+  puts "Map tiles patched (events preserved) for #{file_path}"
+end
+
 def dump_map_table(file_path)
   unless File.exist?(file_path)
     puts JSON.generate({ error: "Map file not found: #{file_path}" })
@@ -699,6 +774,8 @@ if __FILE__ == $0
     clone_map(ARGV[1], ARGV[2])
   when 'patch_map_data'
     patch_map_data(ARGV[1], ARGV[2])
+  when 'patch_map_tiles'
+    patch_map_tiles(ARGV[1], ARGV[2])
   when 'dump_map_table'
     dump_map_table(ARGV[1])
   when 'read_map'
