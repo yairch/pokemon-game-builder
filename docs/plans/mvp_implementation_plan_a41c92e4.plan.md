@@ -4,16 +4,16 @@ overview: A phased plan to evolve the Pokemon Game Builder from its current POC 
 todos:
   - id: pr-0-1
     content: "PR 0.1: Set up Vitest test infrastructure (main + renderer configs, smoke tests)"
-    status: pending
+    status: completed
   - id: pr-0-2
     content: "PR 0.2: Fix chat-to-map pipeline (add registerMapInInfos after generateMapFile)"
-    status: pending
+    status: completed
   - id: pr-0-3
     content: "PR 0.3: Event-preserving patch path (new Ruby command that keeps events during tile patching)"
-    status: pending
+    status: completed
   - id: pr-1-1
-    content: "PR 1.1: Canvas map preview (render tiles on HTML canvas from tileset image)"
-    status: pending
+    content: "PR 1.1: Canvas map preview (render tiles on HTML canvas from tileset image) — base PR shipped (canvas + 3 layers + autotile static frame + zoom/pan + hover + post-test/chat wiring); follow-ups tracked in GUI roadmap G0"
+    status: in_progress
   - id: pr-1-2
     content: "PR 1.2: Tileset vision (send tileset image to Claude/Gemini with prompts)"
     status: pending
@@ -52,7 +52,7 @@ isProject: false
 
 # Pokemon Game Builder -- MVP Implementation Plan (v2)
 
-**Branch base**: `yairch/mvp-agent` off `master`
+**Branch base**: `master` (each PR branches from and merges back into `master`)
 **Primary AI provider**: Claude (Anthropic)
 **Test framework**: Vitest
 **Plan location**: `docs/plans/`
@@ -65,13 +65,19 @@ isProject: false
 
 The project is a working POC with:
 
-- Electron + React + Vite desktop app with AI chat (Gemini/Claude)
+- Electron + React + Vite desktop app with AI chat (Gemini/Claude); also runs in browser mode (`npm run dev:browser`)
 - Ruby bridge for Marshal round-trip (read/write maps, tilesets, events, system data)
 - Three map test modes (sanity, AI sparse edits, object placement)
-- Tileset Inspector with image overlay
-- No automated tests, no CI, no visual map preview, no event generation
+- Tileset Inspector modal with image + ID overlay
+- **Vitest** test infrastructure (main + renderer); chat-to-map pipeline registers maps in `MapInfos`; tile patching now preserves events (`patch_map_tiles`)
+- **Canvas map preview (Phase 1.1, base PR)** rendering 3 layers from a real tileset image with autotile static frame, zoom/pan, hover coordinates, and post-test/chat wiring
+- Map template picker dropdown and shared map list
 
-**Key bugs**: chat path skips `registerMapInInfos`; `patch_map_data` strips events; AI has no semantic tile context in chat prompts.
+**Open / known limitations**:
+
+- AI has no semantic tile context in chat prompts (Phase 2 owns this).
+- Map preview uses **static frame 0** for autotiles — not RMXP-composed water/edges (tracked in GUI roadmap **G1**).
+- GUI is a single scrolling left column; no map tree / draggable panes / event markers yet (tracked in GUI roadmap **G0** + new **GW** step).
 
 ---
 
@@ -324,6 +330,7 @@ Every PR must include:
 
 ### Branch Strategy
 
-- Each PR: `yairch/mvp-{phase}-{pr-number}` (e.g., `yairch/mvp-0-1-test-infra`)
-- Merge to `yairch/mvp-agent`, periodically merge to `master`
+- Each PR branches from **`master`** and merges back into **`master`**.
+- Suggested branch name pattern: `yairch/mvp-{phase}-{pr-number}-{slug}` (e.g., `yairch/mvp-1-1-canvas-map-preview`).
+- Keep PRs small and reviewable; rebase on latest `master` before opening if it has moved.
 
