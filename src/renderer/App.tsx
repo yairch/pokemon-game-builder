@@ -3,6 +3,7 @@ import ProjectSelector from './components/ProjectSelector';
 import ChatInterface from './components/ChatInterface';
 import MapPreview from './components/MapPreview';
 import { bridge } from './services/bridge';
+import type { MapData } from '../shared/types';
 
 interface Message {
   role: 'user' | 'assistant';
@@ -13,7 +14,7 @@ const App: React.FC = () => {
   const [projectPath, setProjectPath] = useState<string | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [isLoading, setIsLoading] = useState(false);
-  const [currentMap, setCurrentMap] = useState<any>(null);
+  const [currentMap, setCurrentMap] = useState<MapData | null>(null);
   const [hasApiKey, setHasApiKey] = useState<boolean | null>(null);
   const [keyVersion, setKeyVersion] = useState(0);
   const [selectedTemplateMapId, setSelectedTemplateMapId] = useState<number | null>(null);
@@ -127,8 +128,9 @@ const App: React.FC = () => {
             onProviderChange={handleProviderChange}
             selectedTemplateMapId={selectedTemplateMapId}
             onTemplateMapChange={setSelectedTemplateMapId}
+            onMapPreviewUpdate={setCurrentMap}
           />
-          <MapPreview mapData={currentMap} />
+          <MapPreview mapData={currentMap} projectPath={projectPath} />
           
           <div className="bg-white p-4 rounded-lg shadow-sm border border-gray-200">
             <h2 className="text-lg font-semibold mb-2">Instructions</h2>

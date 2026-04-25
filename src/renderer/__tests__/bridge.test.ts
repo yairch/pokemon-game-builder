@@ -62,6 +62,13 @@ describe('bridge HTTP fallback URLs', () => {
     );
   });
 
+  it('tileset-inspector GET includes mapId when provided', async () => {
+    await bridge.invoke('tileset-inspector', { projectPath: '/proj', mapId: 12 });
+    expect(fetch).toHaveBeenCalledWith(
+      `${API_BASE}/tileset-inspector?projectPath=${encodeURIComponent('/proj')}&mapId=12`
+    );
+  });
+
   it('ping fetches GET /ping', async () => {
     await bridge.invoke('ping');
     expect(fetch).toHaveBeenCalledWith(`${API_BASE}/ping`);

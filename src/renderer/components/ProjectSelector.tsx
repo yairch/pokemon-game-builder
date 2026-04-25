@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { FolderOpen, PlusCircle, CheckCircle, Key } from 'lucide-react';
 import { bridge } from '../services/bridge';
-import { TilesetInspectorData } from '../../shared/types';
+import { MapData, TilesetInspectorData } from '../../shared/types';
 
 type AIProvider = 'claude' | 'gemini';
 
@@ -19,6 +19,8 @@ interface ProjectSelectorProps {
   onProviderChange?: () => void;
   selectedTemplateMapId: number | null;
   onTemplateMapChange: (mapId: number | null) => void;
+  /** When a map test creates a new map, parent can refresh the canvas preview. */
+  onMapPreviewUpdate?: (mapData: MapData) => void;
 }
 
 const ProjectSelector: React.FC<ProjectSelectorProps> = ({ 
@@ -29,7 +31,8 @@ const ProjectSelector: React.FC<ProjectSelectorProps> = ({
   keyVersion,
   onProviderChange,
   selectedTemplateMapId,
-  onTemplateMapChange
+  onTemplateMapChange,
+  onMapPreviewUpdate,
 }) => {
   const [newProjectPath, setNewProjectPath] = useState<string | null>(null);
   const [isInitializing, setIsInitializing] = useState(false);
@@ -330,6 +333,9 @@ const ProjectSelector: React.FC<ProjectSelectorProps> = ({
           ? ` source:${result.sourceMapId} (${result.sourceMapName || 'unknown'})`
           : '';
         setMapTestResult({ success: true, message: `Created Map${String(result.mapId).padStart(3, '0')} (${result.mapData.name}).${debug}${sourceInfo}` });
+        if (result.mapData && onMapPreviewUpdate) {
+          onMapPreviewUpdate(result.mapData as MapData);
+        }
       } else {
         setMapTestResult({ success: false, message: result.error || 'Test failed.' });
       }
@@ -682,12 +688,15 @@ const ProjectSelector: React.FC<ProjectSelectorProps> = ({
               <div className="flex flex-col">
                 <h4 className="text-xs font-semibold text-gray-700 mb-2">Autotiles</h4>
                 <div className="flex-1 overflow-auto border border-gray-200 rounded bg-gray-50 p-2 max-h-[60vh]">
-                  {(tilesetInspector.autotileImageDataUrls || []).length > 0 ? (
+                  {(tilesetInspector.autotileImageDataUrls || []).some((u, i) => !!(u || tilesetInspector.autotileImageUrls?.[i])) ? (
                     <div className="grid grid-cols-2 gap-3">
-                      {tilesetInspector.autotileImageDataUrls.map((dataUrl, index) => (
-                        <div key={`${dataUrl}-${index}`} className="bg-white border border-gray-200 rounded p-2">
+                      {(tilesetInspector.autotileImageDataUrls || []).map((dataUrl, index) => {
+                        const src = dataUrl || tilesetInspector.autotileImageUrls?.[index];
+                        if (!src) return null;
+                        return (
+                        <div key={index} className="bg-white border border-gray-200 rounded p-2">
                           <img
-                            src={dataUrl || tilesetInspector.autotileImageUrls?.[index]}
+                            src={src}
                             alt={`Autotile ${index + 1}`}
                             className="block w-full h-auto max-h-28 object-contain"
                           />
@@ -695,7 +704,8 @@ const ProjectSelector: React.FC<ProjectSelectorProps> = ({
                             {tilesetInspector.autotileImagePaths?.[index] || `Autotile ${index + 1}`}
                           </div>
                         </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   ) : (
                     <div className="text-xs text-gray-500">No autotiles configured.</div>
