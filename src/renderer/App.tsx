@@ -243,16 +243,16 @@ const App: React.FC = () => {
     !mapInfosLoading;
 
   return (
-    <div className="h-screen bg-gray-50 p-6 flex flex-col overflow-hidden select-text">
-      <header className="mb-6 flex-shrink-0">
-        <h1 className="text-3xl font-extrabold text-gray-900 tracking-tight">
+    <div className="h-screen bg-zinc-100/90 p-6 flex flex-col overflow-hidden select-text">
+      <header className="mb-5 flex-shrink-0">
+        <h1 className="text-2xl font-bold tracking-tight text-zinc-900 sm:text-3xl">
           Pokemon <span className="text-blue-600">Game Builder</span>
         </h1>
-        <p className="text-sm text-gray-600 mt-1">AI-Powered RPG Maker XP Companion</p>
+        <p className="mt-1 text-sm text-zinc-500">AI companion for Pokémon Essentials & RPG Maker XP</p>
       </header>
 
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 flex-1 overflow-hidden">
-        <div className="lg:col-span-4 space-y-6 overflow-y-auto pr-2 custom-scrollbar">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 flex-1 overflow-hidden">
+        <div className="lg:col-span-4 space-y-5 overflow-y-auto pr-2 custom-scrollbar">
           <ProjectSelector
             currentPath={projectPath}
             onProjectSelect={setProjectPath}
@@ -274,6 +274,7 @@ const App: React.FC = () => {
               selectedMapId={previewMapId}
               onSelectMap={setPreviewMapId}
               loading={treeBusy}
+              resetKey={projectPath}
             />
           )}
           <MapPreview
@@ -285,18 +286,18 @@ const App: React.FC = () => {
             onInspectTileset={requestPreviewTilesetInspect}
           />
 
-          <div className="bg-white p-4 rounded-lg shadow-sm border border-gray-200">
-            <h2 className="text-lg font-semibold mb-2">Instructions</h2>
-            <ul className="text-sm text-gray-600 space-y-2 list-disc pl-4">
-              <li>Select your Pokemon Essentials project folder.</li>
-              <li>Ask the AI to create a map, event, or script.</li>
-              <li>Changes are applied directly to your project files.</li>
-              <li>Open RPG Maker XP to see the results.</li>
+          <div className="rounded-xl border border-zinc-200/90 bg-white p-4 shadow-sm ring-1 ring-black/[0.03]">
+            <h2 className="text-xs font-semibold uppercase tracking-wide text-zinc-500">Quick tips</h2>
+            <ul className="mt-2 space-y-2 pl-4 text-[13px] leading-relaxed text-zinc-600 list-disc marker:text-zinc-300">
+              <li>Select your Pokémon Essentials project folder.</li>
+              <li>Use chat to create maps, events, or scripts.</li>
+              <li>Changes write to your project on disk.</li>
+              <li>Open RPG Maker XP for full editing when needed.</li>
             </ul>
           </div>
         </div>
 
-        <div className="lg:col-span-8 flex flex-col overflow-hidden">
+        <div className="lg:col-span-8 flex min-h-0 flex-col overflow-hidden">
           <ChatInterface
             messages={messages}
             onSendMessage={handleSendMessage}

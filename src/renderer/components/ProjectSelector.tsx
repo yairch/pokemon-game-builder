@@ -376,8 +376,8 @@ const ProjectSelector: React.FC<ProjectSelectorProps> = ({
   const info = providerInfo[currentProvider];
 
   return (
-    <div className="bg-white p-4 rounded-lg shadow-sm border border-gray-200 mb-4">
-      <h2 className="text-lg font-semibold mb-4 text-gray-800">Configuration</h2>
+    <section className="mb-0 rounded-xl border border-zinc-200/90 bg-white p-5 shadow-sm ring-1 ring-black/[0.03]">
+      <h2 className="mb-5 text-xs font-semibold uppercase tracking-wide text-zinc-500">Configuration</h2>
       
       {/* Provider Selection */}
       <div className="mb-4 p-3 bg-gray-50 rounded-lg border border-gray-100">
@@ -714,7 +714,7 @@ const ProjectSelector: React.FC<ProjectSelectorProps> = ({
           </div>
         </div>
       )}
-    </div>
+    </section>
   );
 };
 
