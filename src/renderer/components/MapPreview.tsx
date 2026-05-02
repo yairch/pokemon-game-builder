@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { Layers } from 'lucide-react';
 import { bridge } from '../services/bridge';
 import type { MapData, TilesetInspectorData } from '../../shared/types';
 import {
@@ -11,6 +12,12 @@ import {
 interface MapPreviewProps {
   mapData: MapData | null;
   projectPath: string | null;
+  /** Map is loading from bridge `read-map` */
+  previewLoading?: boolean;
+  previewLoadError?: string | null;
+  /** True when MapInfos has no maps (project may still be selected) */
+  noMapsInProject?: boolean;
+  onInspectTileset?: () => void;
 }
 
 function loadImageFromSrc(src: string): Promise<HTMLImageElement> {
@@ -22,7 +29,14 @@ function loadImageFromSrc(src: string): Promise<HTMLImageElement> {
   });
 }
 
-const MapPreview: React.FC<MapPreviewProps> = ({ mapData, projectPath }) => {
+const MapPreview: React.FC<MapPreviewProps> = ({
+  mapData,
+  projectPath,
+  previewLoading = false,
+  previewLoadError,
+  noMapsInProject = false,
+  onInspectTileset,
+}) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const viewportRef = useRef<HTMLDivElement>(null);
   const [tilesetError, setTilesetError] = useState<string | null>(null);
@@ -161,8 +175,21 @@ const MapPreview: React.FC<MapPreviewProps> = ({ mapData, projectPath }) => {
 
   return (
     <div className="bg-white p-4 rounded-lg shadow-sm border border-gray-200">
-      <div className="flex items-center justify-between mb-2 gap-2">
-        <h2 className="text-lg font-semibold">Map Preview</h2>
+      <div className="flex items-center justify-between mb-2 gap-2 flex-wrap">
+        <div className="flex items-center gap-2">
+          <h2 className="text-lg font-semibold">Map Preview</h2>
+          {projectPath && mapData && onInspectTileset && (
+            <button
+              type="button"
+              onClick={() => onInspectTileset()}
+              className="p-1.5 rounded-md text-gray-500 border border-transparent hover:border-gray-300 hover:text-blue-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-400 transition"
+              title="Inspect tileset for previewed map"
+              aria-label="Inspect tileset for previewed map"
+            >
+              <Layers size={18} strokeWidth={1.75} />
+            </button>
+          )}
+        </div>
         {mapData && (
           <div className="flex items-center gap-1 text-xs text-gray-600">
             <button
@@ -197,13 +224,43 @@ const MapPreview: React.FC<MapPreviewProps> = ({ mapData, projectPath }) => {
         )}
       </div>
 
-      {!mapData && (
-        <div className="flex items-center justify-center h-[200px] bg-gray-50 rounded border border-dashed border-gray-300">
-          <p className="text-gray-400">No map generated yet</p>
+      {!projectPath && (
+        <div className="flex items-center justify-center h-[200px] bg-gray-50 rounded border border-dashed border-gray-300 px-4 text-center">
+          <p className="text-gray-500 text-sm">Select a Pokémon Essentials project to load maps.</p>
         </div>
       )}
 
-      {mapData && (
+      {projectPath && noMapsInProject && (
+        <div className="flex items-center justify-center h-[200px] bg-gray-50 rounded border border-dashed border-gray-300 px-4 text-center">
+          <p className="text-gray-500 text-sm">This project has no maps in MapInfos yet.</p>
+        </div>
+      )}
+
+      {projectPath && !noMapsInProject && previewLoadError && (
+        <div className="rounded border border-amber-200 bg-amber-50 px-3 py-6 text-center text-sm text-amber-900">
+          Could not load map: {previewLoadError}
+        </div>
+      )}
+
+      {projectPath &&
+        !noMapsInProject &&
+        !previewLoadError &&
+        previewLoading &&
+        !mapData && (
+          <div className="flex items-center justify-center h-[220px] bg-gray-50 rounded border border-dashed border-gray-300 px-4 text-center">
+            <p className="text-gray-500 text-sm" role="status">
+              Loading map from disk…
+            </p>
+          </div>
+        )}
+
+      {projectPath && !noMapsInProject && !previewLoadError && !mapData && !previewLoading && (
+        <div className="flex items-center justify-center h-[200px] bg-gray-50 rounded border border-dashed border-gray-300 px-4 text-center">
+          <p className="text-gray-500 text-sm">Pick a map in the tree.</p>
+        </div>
+      )}
+
+      {mapData && !previewLoadError && (
         <div className="space-y-2">
           <div className="text-sm text-gray-600">
             <span className="text-blue-600 font-medium">{mapData.name}</span>
@@ -221,6 +278,11 @@ const MapPreview: React.FC<MapPreviewProps> = ({ mapData, projectPath }) => {
             )}
           </div>
 
+          {previewLoading && (
+            <p className="text-xs text-blue-700" role="status">
+              Refreshing map from disk…
+            </p>
+          )}
           {tilesetLoading && (
             <p className="text-xs text-gray-500">Loading tileset…</p>
           )}

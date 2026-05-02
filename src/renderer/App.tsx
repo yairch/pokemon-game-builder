@@ -1,9 +1,12 @@
-import React, { useState, useEffect } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import ProjectSelector from './components/ProjectSelector';
 import ChatInterface from './components/ChatInterface';
 import MapPreview from './components/MapPreview';
+import MapsTree from './components/MapsTree';
 import { bridge } from './services/bridge';
-import type { MapData } from '../shared/types';
+import type { MapData, MapInfosReadData } from '../shared/types';
+import { buildMapInfosTree, getDefaultPreviewMapId } from '../shared/mapInfosTree';
+import { mapReadDataToMapData } from '../shared/mapReadToMapData';
 
 interface Message {
   role: 'user' | 'assistant';
@@ -14,19 +17,143 @@ const App: React.FC = () => {
   const [projectPath, setProjectPath] = useState<string | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [isLoading, setIsLoading] = useState(false);
-  const [currentMap, setCurrentMap] = useState<MapData | null>(null);
   const [hasApiKey, setHasApiKey] = useState<boolean | null>(null);
   const [keyVersion, setKeyVersion] = useState(0);
   const [selectedTemplateMapId, setSelectedTemplateMapId] = useState<number | null>(null);
 
+  const [mapInfos, setMapInfos] = useState<MapInfosReadData | null>(null);
+  const [mapInfosLoading, setMapInfosLoading] = useState(false);
+  const [previewMapId, setPreviewMapId] = useState<number | null>(null);
+  const [previewMap, setPreviewMap] = useState<MapData | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewError, setPreviewError] = useState<string | null>(null);
+  const [inspectFromPreview, setInspectFromPreview] = useState<{ mapId: number; nonce: number } | null>(null);
+
+  const reloadMapInfos = useCallback(async () => {
+    if (!projectPath) return;
+    try {
+      const result = await bridge.invoke('read-map-infos', { projectPath });
+      if (!result?.success || !result?.data) {
+        console.error('read-map-infos failed:', result?.error ?? result);
+        setMapInfos({});
+        return;
+      }
+      setMapInfos(result.data as MapInfosReadData);
+    } catch (e) {
+      console.error('Failed to read map infos:', e);
+      setMapInfos({});
+    }
+  }, [projectPath]);
+
   useEffect(() => {
-    // Check if API key exists on startup
+    setMapInfos(null);
+    setPreviewMapId(null);
+    setPreviewMap(null);
+    setPreviewError(null);
+    setSelectedTemplateMapId(null);
+    setInspectFromPreview(null);
+  }, [projectPath]);
+
+  useEffect(() => {
+    if (!projectPath) {
+      setMapInfosLoading(false);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      setMapInfosLoading(true);
+      await reloadMapInfos();
+      if (!cancelled) setMapInfosLoading(false);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [projectPath, reloadMapInfos]);
+
+  useEffect(() => {
+    if (!mapInfos || mapInfosLoading) return;
+    const keys = Object.keys(mapInfos);
+    setPreviewMapId((prev) => {
+      if (prev != null && keys.length > 0 && keys.includes(String(prev))) return prev;
+      return getDefaultPreviewMapId(mapInfos);
+    });
+  }, [mapInfos, mapInfosLoading]);
+
+  useEffect(() => {
+    if (!projectPath || previewMapId == null) {
+      setPreviewMap(null);
+      setPreviewLoading(false);
+      setPreviewError(null);
+      return;
+    }
+    const mapInfosEntry =
+      mapInfos && Object.prototype.hasOwnProperty.call(mapInfos, String(previewMapId))
+        ? mapInfos[String(previewMapId)]
+        : undefined;
+    const mapNameFallback = mapInfosEntry?.name ?? `Map${String(previewMapId).padStart(3, '0')}`;
+    let cancelled = false;
+    setPreviewLoading(true);
+    setPreviewError(null);
+
+    bridge
+      .invoke('read-map', { projectPath, mapId: previewMapId })
+      .then((r) => {
+        if (cancelled) return;
+        if (!r?.success || !r?.data) {
+          setPreviewError(r?.error || 'Could not read map.');
+          setPreviewMap(null);
+        } else {
+          setPreviewMap(
+            mapReadDataToMapData(previewMapId, mapNameFallback, r.data)
+          );
+        }
+      })
+      .catch((err: unknown) => {
+        if (cancelled) return;
+        setPreviewMap(null);
+        setPreviewError(err instanceof Error ? err.message : 'Could not read map.');
+      })
+      .finally(() => {
+        if (!cancelled) setPreviewLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [projectPath, previewMapId, mapInfos]);
+
+  const handleMapRegistryChanged = useCallback(
+    async (selectNewMapId?: number) => {
+      if (!projectPath) return;
+      setMapInfosLoading(true);
+      try {
+        const result = await bridge.invoke('read-map-infos', { projectPath });
+        if (result?.success && result.data) setMapInfos(result.data as MapInfosReadData);
+        if (selectNewMapId != null) setPreviewMapId(selectNewMapId);
+      } finally {
+        setMapInfosLoading(false);
+      }
+    },
+    [projectPath]
+  );
+
+  const mapTreeRoots = useMemo(() => buildMapInfosTree(mapInfos ?? {}), [mapInfos]);
+
+  useEffect(() => {
     const checkApiKey = async () => {
       const exists = await bridge.invoke('has-api-key');
       setHasApiKey(exists);
     };
     checkApiKey();
   }, []);
+
+  const requestPreviewTilesetInspect = () => {
+    if (previewMapId == null) return;
+    setInspectFromPreview((prev) => ({
+      mapId: previewMapId,
+      nonce: (prev?.nonce ?? 0) + 1,
+    }));
+  };
 
   const handleSendMessage = async (content: string) => {
     const userMessage: Message = { role: 'user', content };
@@ -41,8 +168,8 @@ const App: React.FC = () => {
       });
 
       setMessages((prev) => [...prev, { role: 'assistant', content: response.text }]);
-      if (response.mapData) {
-        setCurrentMap(response.mapData);
+      if (response.mapData?.id != null) {
+        await handleMapRegistryChanged(response.mapData.id);
       }
     } catch (error) {
       console.error('Error sending message:', error);
@@ -71,22 +198,23 @@ const App: React.FC = () => {
       if (result.success) {
         setMessages((prev) => [
           ...prev,
-          { role: 'assistant', content: `POC map generated as Map${result.mapId.toString().padStart(3, '0')}.rxdata.` }
+          {
+            role: 'assistant',
+            content: `POC map generated as Map${result.mapId.toString().padStart(3, '0')}.rxdata.`,
+          },
         ]);
-        if (result.mapData) {
-          setCurrentMap(result.mapData);
-        }
+        await handleMapRegistryChanged(result.mapId);
       } else {
         setMessages((prev) => [
           ...prev,
-          { role: 'assistant', content: `Error: ${result.error || 'Failed to generate map.'}` }
+          { role: 'assistant', content: `Error: ${result.error || 'Failed to generate map.'}` },
         ]);
       }
     } catch (error: any) {
       console.error('Error generating POC map:', error);
       setMessages((prev) => [
         ...prev,
-        { role: 'assistant', content: 'Error: Failed to generate map. Please try again.' }
+        { role: 'assistant', content: 'Error: Failed to generate map. Please try again.' },
       ]);
     } finally {
       setIsLoading(false);
@@ -97,16 +225,22 @@ const App: React.FC = () => {
     const success = await bridge.invoke('set-api-key', newKey);
     if (success) {
       setHasApiKey(!!newKey);
-      setKeyVersion(v => v + 1);
+      setKeyVersion((v) => v + 1);
     }
   };
 
   const handleProviderChange = async () => {
-    // Re-check API key when provider changes
     const exists = await bridge.invoke('has-api-key');
     setHasApiKey(exists);
-    setKeyVersion(v => v + 1);
+    setKeyVersion((v) => v + 1);
   };
+
+  const treeBusy = Boolean(projectPath && (mapInfosLoading || mapInfos === null));
+  const noMapsWhenReady =
+    Boolean(projectPath) &&
+    Boolean(mapInfos) &&
+    Object.keys(mapInfos!).length === 0 &&
+    !mapInfosLoading;
 
   return (
     <div className="h-screen bg-gray-50 p-6 flex flex-col overflow-hidden select-text">
@@ -128,10 +262,29 @@ const App: React.FC = () => {
             onProviderChange={handleProviderChange}
             selectedTemplateMapId={selectedTemplateMapId}
             onTemplateMapChange={setSelectedTemplateMapId}
-            onMapPreviewUpdate={setCurrentMap}
+            onMapRegistryChanged={handleMapRegistryChanged}
+            mapInfos={mapInfos}
+            mapListLoading={treeBusy}
+            tilesetInspectFromPreview={inspectFromPreview}
+            onTilesetInspectFromPreviewClosed={() => setInspectFromPreview(null)}
           />
-          <MapPreview mapData={currentMap} projectPath={projectPath} />
-          
+          {projectPath && (
+            <MapsTree
+              roots={mapTreeRoots}
+              selectedMapId={previewMapId}
+              onSelectMap={setPreviewMapId}
+              loading={treeBusy}
+            />
+          )}
+          <MapPreview
+            mapData={previewMap}
+            projectPath={projectPath}
+            previewLoading={previewLoading}
+            previewLoadError={previewError}
+            noMapsInProject={noMapsWhenReady}
+            onInspectTileset={requestPreviewTilesetInspect}
+          />
+
           <div className="bg-white p-4 rounded-lg shadow-sm border border-gray-200">
             <h2 className="text-lg font-semibold mb-2">Instructions</h2>
             <ul className="text-sm text-gray-600 space-y-2 list-disc pl-4">
