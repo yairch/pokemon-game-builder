@@ -1,14 +1,9 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { FolderOpen, PlusCircle, CheckCircle, Key } from 'lucide-react';
 import { bridge } from '../services/bridge';
-import { MapData, TilesetInspectorData } from '../../shared/types';
+import { MapInfoData, MapInfosReadData, TilesetInspectorData } from '../../shared/types';
 
 type AIProvider = 'claude' | 'gemini';
-
-interface MapListEntry {
-  id: number;
-  name: string;
-}
 
 interface ProjectSelectorProps {
   onProjectSelect: (path: string) => void;
@@ -19,20 +14,27 @@ interface ProjectSelectorProps {
   onProviderChange?: () => void;
   selectedTemplateMapId: number | null;
   onTemplateMapChange: (mapId: number | null) => void;
-  /** When a map test creates a new map, parent can refresh the canvas preview. */
-  onMapPreviewUpdate?: (mapData: MapData) => void;
+  mapInfos: MapInfosReadData | null;
+  mapListLoading?: boolean;
+  onMapRegistryChanged?: (selectNewMapId?: number) => void | Promise<void>;
+  tilesetInspectFromPreview?: { mapId: number; nonce: number } | null;
+  onTilesetInspectFromPreviewClosed?: () => void;
 }
 
-const ProjectSelector: React.FC<ProjectSelectorProps> = ({ 
-  onProjectSelect, 
-  currentPath, 
-  hasApiKey, 
+const ProjectSelector: React.FC<ProjectSelectorProps> = ({
+  onProjectSelect,
+  currentPath,
+  hasApiKey,
   onSaveApiKey,
   keyVersion,
   onProviderChange,
   selectedTemplateMapId,
   onTemplateMapChange,
-  onMapPreviewUpdate,
+  mapInfos,
+  mapListLoading = false,
+  onMapRegistryChanged,
+  tilesetInspectFromPreview,
+  onTilesetInspectFromPreviewClosed,
 }) => {
   const [newProjectPath, setNewProjectPath] = useState<string | null>(null);
   const [isInitializing, setIsInitializing] = useState(false);
@@ -47,8 +49,12 @@ const ProjectSelector: React.FC<ProjectSelectorProps> = ({
   const [tilesetInspector, setTilesetInspector] = useState<TilesetInspectorData | null>(null);
   const [tilesetInspectorError, setTilesetInspectorError] = useState('');
   const [tilesetInspectorLoading, setTilesetInspectorLoading] = useState(false);
-  const [mapList, setMapList] = useState<MapListEntry[]>([]);
-  const [mapListLoading, setMapListLoading] = useState(false);
+  const mapList = useMemo(() => {
+    if (!mapInfos) return [];
+    return (Object.values(mapInfos) as MapInfoData[])
+      .map((info) => ({ id: info.id, name: info.name }))
+      .sort((a, b) => a.id - b.id);
+  }, [mapInfos]);
   const tilesetCanvasRef = useRef<HTMLCanvasElement>(null);
   const tilesetImageRef = useRef<HTMLImageElement>(null);
   const [mapTestRunning, setMapTestRunning] = useState(false);
@@ -144,39 +150,11 @@ const ProjectSelector: React.FC<ProjectSelectorProps> = ({
   }, [tilesetInspector]);
 
   useEffect(() => {
-    if (!currentPath) {
-      setMapList([]);
-      onTemplateMapChange(null);
-      return;
+    if (!currentPath) return;
+    if (mapInfos && mapList.length > 0 && selectedTemplateMapId === null) {
+      onTemplateMapChange(mapList[0].id);
     }
-    let cancelled = false;
-    const fetchMaps = async () => {
-      setMapListLoading(true);
-      try {
-        const result = await bridge.invoke('read-map-infos', { projectPath: currentPath });
-        if (cancelled) return;
-        if (!result?.success || !result?.data) {
-          console.error('read-map-infos failed:', result?.error ?? result);
-          setMapList([]);
-          return;
-        }
-        const entries: MapListEntry[] = Object.values(result.data)
-          .map((info: any) => ({ id: info.id as number, name: info.name as string }))
-          .sort((a, b) => a.id - b.id);
-        setMapList(entries);
-        if (entries.length > 0 && selectedTemplateMapId === null) {
-          onTemplateMapChange(entries[0].id);
-        }
-      } catch (e) {
-        console.error('Failed to fetch map list:', e);
-        if (!cancelled) setMapList([]);
-      } finally {
-        if (!cancelled) setMapListLoading(false);
-      }
-    };
-    fetchMaps();
-    return () => { cancelled = true; };
-  }, [currentPath]);
+  }, [currentPath, mapInfos, mapList, selectedTemplateMapId, onTemplateMapChange]);
 
   const handleProviderChange = async (provider: AIProvider) => {
     if (provider === currentProvider) return; // Already on this provider
@@ -266,6 +244,46 @@ const ProjectSelector: React.FC<ProjectSelectorProps> = ({
     }
   };
 
+  const loadTilesetInspectorForMap = useCallback(
+    async (mapId: number) => {
+      if (!currentPath) {
+        setTilesetInspectorError('Please select a project first.');
+        setTilesetInspector(null);
+        return;
+      }
+      setTilesetInspectorError('');
+      setTilesetInspectorLoading(true);
+      try {
+        const result = await bridge.invoke('tileset-inspector', {
+          projectPath: currentPath,
+          mapId,
+        });
+        if (result.success) {
+          setTilesetInspector(result.data);
+        } else {
+          setTilesetInspector(null);
+          setTilesetInspectorError(result.error || 'Failed to load tileset inspector.');
+        }
+      } catch (e: any) {
+        setTilesetInspector(null);
+        setTilesetInspectorError(e.message || 'Failed to load tileset inspector.');
+      } finally {
+        setTilesetInspectorLoading(false);
+      }
+    },
+    [currentPath]
+  );
+
+  const closeTilesetInspector = () => {
+    setTilesetInspector(null);
+    onTilesetInspectFromPreviewClosed?.();
+  };
+
+  useEffect(() => {
+    if (!tilesetInspectFromPreview || !currentPath) return;
+    void loadTilesetInspectorForMap(tilesetInspectFromPreview.mapId);
+  }, [tilesetInspectFromPreview, currentPath, loadTilesetInspectorForMap]);
+
   const handleOpenTilesetInspector = async () => {
     if (!currentPath) {
       setTilesetInspectorError('Please select a project first.');
@@ -277,25 +295,7 @@ const ProjectSelector: React.FC<ProjectSelectorProps> = ({
       setTilesetInspector(null);
       return;
     }
-    setTilesetInspectorError('');
-    setTilesetInspectorLoading(true);
-    try {
-      const result = await bridge.invoke('tileset-inspector', {
-        projectPath: currentPath,
-        mapId: selectedTemplateMapId
-      });
-      if (result.success) {
-        setTilesetInspector(result.data);
-      } else {
-        setTilesetInspector(null);
-        setTilesetInspectorError(result.error || 'Failed to load tileset inspector.');
-      }
-    } catch (e: any) {
-      setTilesetInspector(null);
-      setTilesetInspectorError(e.message || 'Failed to load tileset inspector.');
-    } finally {
-      setTilesetInspectorLoading(false);
-    }
+    await loadTilesetInspectorForMap(selectedTemplateMapId);
   };
 
   const handleRunMapTest = async (testType: 'ai' | 'sanity' | 'object') => {
@@ -333,9 +333,7 @@ const ProjectSelector: React.FC<ProjectSelectorProps> = ({
           ? ` source:${result.sourceMapId} (${result.sourceMapName || 'unknown'})`
           : '';
         setMapTestResult({ success: true, message: `Created Map${String(result.mapId).padStart(3, '0')} (${result.mapData.name}).${debug}${sourceInfo}` });
-        if (result.mapData && onMapPreviewUpdate) {
-          onMapPreviewUpdate(result.mapData as MapData);
-        }
+        if (onMapRegistryChanged) await Promise.resolve(onMapRegistryChanged(result.mapId));
       } else {
         setMapTestResult({ success: false, message: result.error || 'Test failed.' });
       }
@@ -378,8 +376,8 @@ const ProjectSelector: React.FC<ProjectSelectorProps> = ({
   const info = providerInfo[currentProvider];
 
   return (
-    <div className="bg-white p-4 rounded-lg shadow-sm border border-gray-200 mb-4">
-      <h2 className="text-lg font-semibold mb-4 text-gray-800">Configuration</h2>
+    <section className="mb-0 rounded-xl border border-zinc-200/90 bg-white p-5 shadow-sm ring-1 ring-black/[0.03]">
+      <h2 className="mb-5 text-xs font-semibold uppercase tracking-wide text-zinc-500">Configuration</h2>
       
       {/* Provider Selection */}
       <div className="mb-4 p-3 bg-gray-50 rounded-lg border border-gray-100">
@@ -666,7 +664,7 @@ const ProjectSelector: React.FC<ProjectSelectorProps> = ({
                   Map: {tilesetInspector.mapName} (ID {tilesetInspector.mapId}) · Tileset {tilesetInspector.tilesetId}
                 </p>
               </div>
-              <button onClick={() => setTilesetInspector(null)} className="text-gray-400 hover:text-gray-600">✕</button>
+              <button onClick={closeTilesetInspector} className="text-gray-400 hover:text-gray-600">✕</button>
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
@@ -716,7 +714,7 @@ const ProjectSelector: React.FC<ProjectSelectorProps> = ({
           </div>
         </div>
       )}
-    </div>
+    </section>
   );
 };
 

@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { Layers, ZoomIn, ZoomOut, RotateCcw } from 'lucide-react';
 import { bridge } from '../services/bridge';
 import type { MapData, TilesetInspectorData } from '../../shared/types';
 import {
@@ -11,6 +12,12 @@ import {
 interface MapPreviewProps {
   mapData: MapData | null;
   projectPath: string | null;
+  /** Map is loading from bridge `read-map` */
+  previewLoading?: boolean;
+  previewLoadError?: string | null;
+  /** True when MapInfos has no maps (project may still be selected) */
+  noMapsInProject?: boolean;
+  onInspectTileset?: () => void;
 }
 
 function loadImageFromSrc(src: string): Promise<HTMLImageElement> {
@@ -22,7 +29,14 @@ function loadImageFromSrc(src: string): Promise<HTMLImageElement> {
   });
 }
 
-const MapPreview: React.FC<MapPreviewProps> = ({ mapData, projectPath }) => {
+const MapPreview: React.FC<MapPreviewProps> = ({
+  mapData,
+  projectPath,
+  previewLoading = false,
+  previewLoadError,
+  noMapsInProject = false,
+  onInspectTileset,
+}) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const viewportRef = useRef<HTMLDivElement>(null);
   const [tilesetError, setTilesetError] = useState<string | null>(null);
@@ -160,69 +174,122 @@ const MapPreview: React.FC<MapPreviewProps> = ({ mapData, projectPath }) => {
   }, []);
 
   return (
-    <div className="bg-white p-4 rounded-lg shadow-sm border border-gray-200">
-      <div className="flex items-center justify-between mb-2 gap-2">
-        <h2 className="text-lg font-semibold">Map Preview</h2>
-        {mapData && (
-          <div className="flex items-center gap-1 text-xs text-gray-600">
+    <section className="rounded-xl border border-zinc-200/90 bg-white p-4 shadow-sm ring-1 ring-black/[0.03]">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <div className="flex min-w-0 items-center gap-2">
+          <h2 className="text-xs font-semibold uppercase tracking-wide text-zinc-500">Preview</h2>
+          {projectPath && mapData && onInspectTileset && (
             <button
               type="button"
-              className="px-2 py-0.5 rounded border border-gray-300 hover:bg-gray-50"
+              onClick={() => onInspectTileset()}
+              className="rounded-md border border-transparent p-1.5 text-zinc-500 transition-colors hover:border-zinc-200 hover:bg-zinc-50 hover:text-blue-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/60"
+              title="Inspect tileset for previewed map"
+              aria-label="Inspect tileset for previewed map"
+            >
+              <Layers size={18} strokeWidth={1.75} />
+            </button>
+          )}
+        </div>
+        {mapData && (
+          <div className="flex items-center gap-0.5 rounded-lg border border-zinc-200/90 bg-zinc-50/80 p-0.5">
+            <button
+              type="button"
+              className="inline-flex h-8 w-8 items-center justify-center rounded-md text-zinc-600 transition-colors hover:bg-white hover:text-zinc-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/50"
               onClick={() => setZoom((z) => Math.min(6, z * 1.25))}
               aria-label="Zoom in"
+              title="Zoom in"
             >
-              +
+              <ZoomIn size={17} strokeWidth={2} />
             </button>
             <button
               type="button"
-              className="px-2 py-0.5 rounded border border-gray-300 hover:bg-gray-50"
+              className="inline-flex h-8 w-8 items-center justify-center rounded-md text-zinc-600 transition-colors hover:bg-white hover:text-zinc-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/50"
               onClick={() => setZoom((z) => Math.max(0.12, z / 1.25))}
               aria-label="Zoom out"
+              title="Zoom out"
             >
-              −
+              <ZoomOut size={17} strokeWidth={2} />
             </button>
             <button
               type="button"
-              className="px-2 py-0.5 rounded border border-gray-300 hover:bg-gray-50"
+              className="inline-flex h-8 w-8 items-center justify-center rounded-md text-zinc-600 transition-colors hover:bg-white hover:text-zinc-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/50"
               onClick={() => {
                 setZoom(1);
                 setPan({ x: 0, y: 0 });
               }}
               aria-label="Reset pan and zoom"
+              title="Reset view"
             >
-              Reset
+              <RotateCcw size={16} strokeWidth={2} />
             </button>
-            <span className="ml-1 tabular-nums">{Math.round(zoom * 100)}%</span>
+            <span className="mx-2 min-w-[2.75rem] text-center font-mono text-[11px] font-medium tabular-nums text-zinc-500">
+              {Math.round(zoom * 100)}%
+            </span>
           </div>
         )}
       </div>
 
-      {!mapData && (
-        <div className="flex items-center justify-center h-[200px] bg-gray-50 rounded border border-dashed border-gray-300">
-          <p className="text-gray-400">No map generated yet</p>
+      {!projectPath && (
+        <div className="flex h-[200px] items-center justify-center rounded-lg border border-dashed border-zinc-200 bg-zinc-50/70 px-4 text-center">
+          <p className="text-[13px] text-zinc-500">Choose a Pokémon Essentials project to browse maps.</p>
         </div>
       )}
 
-      {mapData && (
+      {projectPath && noMapsInProject && (
+        <div className="flex h-[200px] items-center justify-center rounded-lg border border-dashed border-zinc-200 bg-zinc-50/70 px-4 text-center">
+          <p className="text-[13px] text-zinc-500">No maps listed in MapInfos yet.</p>
+        </div>
+      )}
+
+      {projectPath && !noMapsInProject && previewLoadError && (
+        <div className="rounded border border-amber-200 bg-amber-50 px-3 py-6 text-center text-sm text-amber-900">
+          Could not load map: {previewLoadError}
+        </div>
+      )}
+
+      {projectPath &&
+        !noMapsInProject &&
+        !previewLoadError &&
+        previewLoading &&
+        !mapData && (
+          <div className="flex h-[220px] items-center justify-center rounded-lg border border-dashed border-zinc-200 bg-zinc-50/70 px-4 text-center">
+            <p className="text-[13px] text-zinc-500" role="status">
+              Loading map from disk…
+            </p>
+          </div>
+        )}
+
+      {projectPath && !noMapsInProject && !previewLoadError && !mapData && !previewLoading && (
+        <div className="flex h-[200px] items-center justify-center rounded-lg border border-dashed border-zinc-200 bg-zinc-50/70 px-4 text-center">
+          <p className="text-[13px] text-zinc-500">Select a map in the browser to preview it.</p>
+        </div>
+      )}
+
+      {mapData && !previewLoadError && (
         <div className="space-y-2">
-          <div className="text-sm text-gray-600">
-            <span className="text-blue-600 font-medium">{mapData.name}</span>
-            <span className="mx-2">·</span>
-            <span>
+          <div className="text-[13px] text-zinc-600">
+            <span className="font-semibold text-zinc-900">{mapData.name}</span>
+            <span className="mx-2 text-zinc-300">·</span>
+            <span className="text-zinc-500">
               {mapData.width}×{mapData.height} tiles
             </span>
             {hoverTile && (
               <>
-                <span className="mx-2">·</span>
-                <span className="text-gray-800 font-mono text-xs">
-                  hover ({hoverTile.x}, {hoverTile.y})
+                <span className="mx-2 text-zinc-300">·</span>
+                <span className="font-mono text-[11px] text-zinc-600">
+                  {hoverTile.x}, {hoverTile.y}
                 </span>
               </>
             )}
           </div>
 
+          {previewLoading && (
+            <p className="text-[12px] text-blue-700/90" role="status">
+              Refreshing from disk…
+            </p>
+          )}
           {tilesetLoading && (
-            <p className="text-xs text-gray-500">Loading tileset…</p>
+            <p className="text-[12px] text-zinc-500">Loading tileset…</p>
           )}
           {tilesetError && (
             <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1">{tilesetError}</p>
@@ -230,7 +297,7 @@ const MapPreview: React.FC<MapPreviewProps> = ({ mapData, projectPath }) => {
 
           <div
             ref={viewportRef}
-            className="relative h-[280px] w-full overflow-hidden rounded border border-gray-200 bg-neutral-900 cursor-grab active:cursor-grabbing"
+            className="relative h-[280px] w-full cursor-grab overflow-hidden rounded-lg border border-zinc-900/90 bg-neutral-950 shadow-inner ring-1 ring-black/20 active:cursor-grabbing"
             onWheel={onWheel}
             onMouseDown={onMouseDown}
             onMouseMove={onMouseMove}
@@ -252,10 +319,12 @@ const MapPreview: React.FC<MapPreviewProps> = ({ mapData, projectPath }) => {
               </div>
             )}
           </div>
-          <p className="text-[11px] text-gray-500">Drag to pan, wheel to zoom. Autotiles use a static frame (MVP).</p>
+          <p className="text-[11px] leading-snug text-zinc-400">
+            Drag to pan · Scroll to zoom · Autotiles use a single static frame (MVP)
+          </p>
         </div>
       )}
-    </div>
+    </section>
   );
 };
 
