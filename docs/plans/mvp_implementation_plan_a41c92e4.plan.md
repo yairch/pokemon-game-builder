@@ -12,8 +12,17 @@ todos:
     content: "PR 0.3: Event-preserving patch path (new Ruby command that keeps events during tile patching)"
     status: completed
   - id: pr-1-1
-    content: "PR 1.1: Canvas map preview (render tiles on HTML canvas from tileset image) — base PR shipped (canvas + 3 layers + autotile static frame + zoom/pan + hover + post-test/chat wiring); follow-ups tracked in GUI roadmap G0"
-    status: in_progress
+    content: "PR 1.1: Canvas map preview (base) — render tiles on canvas from tileset image; 3 layers; autotile static frame 0; zoom/pan/hover; post-test/chat wiring"
+    status: completed
+  - id: pr-g0-1
+    content: "PR-G0-1: Maps tree + preview from read-map selection; refresh tree after generate + auto-select new map; Tileset Inspector trigger for previewed map (see gui_editor_mvp_roadmap G0)"
+    status: pending
+  - id: pr-g0-2
+    content: "PR-G0-2: Event markers on preview canvas from read-map events[] (icon/tooltip id+name); single source of truth from bridge"
+    status: pending
+  - id: pr-g0-3
+    content: "PR-G0-3: Layer strip (L1/L2/L3/Events dimming/focus) + toggleable grid overlay (default on); aria-pressed on strip"
+    status: pending
   - id: pr-1-2
     content: "PR 1.2: Tileset vision (send tileset image to Claude/Gemini with prompts)"
     status: pending
@@ -77,7 +86,7 @@ The project is a working POC with:
 
 - AI has no semantic tile context in chat prompts (Phase 2 owns this).
 - Map preview uses **static frame 0** for autotiles — not RMXP-composed water/edges (tracked in GUI roadmap **G1**).
-- GUI is a single scrolling left column; no map tree / draggable panes / event markers yet (tracked in GUI roadmap **G0** + new **GW** step).
+- GUI is a single scrolling left column; PR **PR-G0-1**–**PR-G0-3** (GUI roadmap **G0**) ship map tree, event markers, layer strip + grid before **GW** (workbench layout).
 
 ---
 
@@ -116,11 +125,11 @@ The main user-facing flow is broken: maps created via chat are invisible in RPG 
 
 ---
 
-## Phase 1: Visual Feedback (2 PRs)
+## Phase 1: Visual Feedback (canvas, G0 preview parity ×3, vision)
 
 Users need to see what the AI generates without opening RPG Maker.
 
-### PR 1.1 -- Canvas Map Preview
+### PR 1.1 -- Canvas Map Preview (base merged)
 
 Replace the metadata-only `[MapPreview.tsx](src/renderer/components/MapPreview.tsx)` with a tile renderer.
 
@@ -131,6 +140,8 @@ Replace the metadata-only `[MapPreview.tsx](src/renderer/components/MapPreview.t
 - Show tile coordinates on hover
 - Integration test: render a known small map (e.g. 5x5) to canvas, verify canvas dimensions and that draw calls occur for non-zero tiles
 - Wire into the post-test and post-chat flows so the preview updates after map generation
+
+Follow-up preview parity lives in **`PR-G0-1`** through **`PR-G0-3`** (scheduled and detailed in [`gui_editor_mvp_roadmap.md`](./gui_editor_mvp_roadmap.md) §G0). Deliver in that order before **GW**.
 
 ### PR 1.2 -- Tileset Image to AI (Vision)
 

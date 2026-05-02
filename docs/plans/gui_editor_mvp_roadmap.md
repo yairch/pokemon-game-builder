@@ -33,13 +33,50 @@ This document **extends** the technical MVP phases in [`mvp_implementation_plan_
 
 ### G0 — Workbench shell (PR 1.1 follow-ups)
 
-PR 1.1 base shipped the canvas (3 layers, autotile static frame, zoom/pan, hover, post-generate wiring). The remaining G0 items are the **next 1.1 PR(s)** and are the unblockers for parity with RMXP everyday workflows:
+PR 1.1 base shipped the canvas (3 layers, autotile static frame, zoom/pan, hover, post-generate wiring). The remaining G0 work is split into **three PR-sized merges** (`PR-G0-1` … `PR-G0-3`); see main plan YAML `pr-g0-1`, `pr-g0-2`, `pr-g0-3`.
 
-- **Maps & folders tree:** Built from `MapInfos` `parentId` / `order` (same mental model as RMXP tree). Lives in the new **map preview pane** (see GW); selecting a node loads that map into the preview.
-- **Layer strip:** Layer 1 / 2 / 3 / Events — **non-selected tile layers dimmed** like RMXP focus; **Events** mode dims all tile layers and emphasizes event markers.
-- **Grid overlay** on the preview canvas (toggleable, on by default).
-- **Event markers** from `read-map` `events[]` (MVP: icon + tooltip / title with id + name); preview should source from `read-map` so cloned template events appear without client-side reconstruction.
-- **Tileset Inspector trigger** on the preview pane (small icon button) so the inspector can be opened for the **currently previewed map** as well as the configured **template map**.
+#### PR-G0-1 — Maps tree + preview from `read-map` + inspector trigger
+
+**Scope**
+
+- **`MapInfos` tree** built from `parentId` / `order` (same mental model as RMXP). Selecting a node calls **`read-map`** and feeds the preview (single source of truth on disk — not only the last `generateMap`/chat result).
+- **Default state:** When a project is loaded, selected tree map renders; replace “only after generate” empties.
+- **After successful generation:** refresh tree, auto-select new map id, preview follows selection.
+- **Tileset Inspector** small icon on the preview header opens the inspector for the **currently previewed** map (template map stays reachable from the configuration panel).
+
+**Suggested tests**
+
+- Unit: pure `MapInfosReadData` → ordered tree (`parentId` / `order`, tolerate missing parents).
+- Renderer / integration style: selecting a node triggers `read-map`; canvas updates.
+- Renderer: successful generate flow refreshes selection and loads the new map.
+
+#### PR-G0-2 — Event markers
+
+**Scope**
+
+- Draw **markers** for `read-map` `events[]` (MVP: icon or badge + **tooltip/title with event id + name**).
+- Reuse **`read-map` output** only (no reconstructing cloned events in the client).
+
+**Suggested tests**
+
+- Unit: coordinate → event hit-test for hover/tooltips.
+- Unit or canvas tests: marker draw coverage for a known small `events[]` fixture.
+
+#### PR-G0-3 — Layer strip + grid
+
+**Scope**
+
+- **Layer strip:** Layer 1 / 2 / 3 / Events — non-selected tile layers **dimmed** (RMXP-style focus); **Events** mode dims all tiles and emphasizes markers (depends on PR-G0-2).
+- **`aria-pressed`** on strip controls (matches **Accessibility**, design principle 5 above).
+- **Grid overlay:** tile-aligned lines, **toggleable**, **on by default**.
+
+**Suggested tests**
+
+- Unit: rendering respects focused layer dimming rules.
+- Unit: grid line count for fixed width×height.
+- Renderer: strip toggles flip `aria-pressed` and trigger redraw.
+
+**Ordering:** PR-G0-1 → PR-G0-2 → PR-G0-3 (tree + `read-map` plumbing first; markers before Events focus mode matters).
 
 ### GW — Workbench rework (between G0 and G1)
 
@@ -117,7 +154,7 @@ Goal: replace the single scrolling left column with a **multi-pane, modern workb
 
 | Main plan item | GUI companion |
 |----------------|---------------|
-| PR 1.1 Canvas preview (base merged) | G0 follow-ups: map tree, layer strip, grid, event markers, inspector trigger |
+| PR 1.1 Canvas preview (base merged) | G0: PR-G0-1 (tree + read-map + inspector) → PR-G0-2 (markers) → PR-G0-3 (layer strip + grid) |
 | GUI workbench rework | GW: top bar config, draggable Workbench / Chat split, instructions popover |
 | PR 1.2 Vision | Palette + preview stay visually aligned |
 | Phase 3 Events | G0 markers → G1/G2 full event UX |
