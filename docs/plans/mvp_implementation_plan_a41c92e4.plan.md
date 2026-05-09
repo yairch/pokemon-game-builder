@@ -22,7 +22,7 @@ todos:
     status: completed
   - id: pr-g0-3
     content: "PR-G0-3: Layer strip (L1/L2/L3/Events dimming/focus) + toggleable grid overlay (default on); aria-pressed on strip"
-    status: pending
+    status: completed
   - id: pr-1-2
     content: "PR 1.2: Tileset vision (send tileset image to Claude/Gemini with prompts)"
     status: pending
