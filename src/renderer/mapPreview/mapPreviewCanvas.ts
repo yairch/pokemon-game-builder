@@ -116,6 +116,26 @@ export function drawMapGrid(
   return lines;
 }
 
+export function drawSelectedTileHighlight(
+  ctx: CanvasRenderingContext2D,
+  tileX: number,
+  tileY: number,
+  tileW: number,
+  tileH: number
+): void {
+  const x = tileX * tileW;
+  const y = tileY * tileH;
+
+  ctx.save();
+  ctx.fillStyle = 'rgba(59, 130, 246, 0.2)';
+  ctx.strokeStyle = 'rgba(59, 130, 246, 0.95)';
+  ctx.lineWidth = 2;
+  ctx.fillRect(x, y, tileW, tileH);
+  // Align border for crisp pixel-like edge
+  ctx.strokeRect(x + 1, y + 1, Math.max(0, tileW - 2), Math.max(0, tileH - 2));
+  ctx.restore();
+}
+
 export function getEventAtTile(
   events: MapEventSpec[] | undefined,
   tileX: number,

@@ -5,6 +5,7 @@ import {
   drawMapEventMarkers,
   drawMapGrid,
   drawMapPreviewLayers,
+  drawSelectedTileHighlight,
   getEventAtTile,
   mapPixelSize,
   regularTileSourceRect,
@@ -196,5 +197,24 @@ describe('drawMapGrid', () => {
     const lines = drawMapGrid(ctx, map, 32, 32);
     expect(lines).toBe(9);
     expect(ctx.stroke).toHaveBeenCalledTimes(9);
+  });
+});
+
+describe('drawSelectedTileHighlight', () => {
+  it('draws a fill and stroke for selected tile', () => {
+    const ctx = {
+      save: vi.fn(),
+      restore: vi.fn(),
+      fillRect: vi.fn(),
+      strokeRect: vi.fn(),
+      fillStyle: '',
+      strokeStyle: '',
+      lineWidth: 0,
+    } as unknown as CanvasRenderingContext2D;
+
+    drawSelectedTileHighlight(ctx, 2, 3, 32, 32);
+
+    expect(ctx.fillRect).toHaveBeenCalledWith(64, 96, 32, 32);
+    expect(ctx.strokeRect).toHaveBeenCalledWith(65, 97, 30, 30);
   });
 });
