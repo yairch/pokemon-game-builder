@@ -1,4 +1,4 @@
-import type { MapData } from '../../shared/types';
+import type { MapData, MapEventSpec } from '../../shared/types';
 
 export const DEFAULT_TILE_SIZE = 32;
 
@@ -79,4 +79,45 @@ export function drawMapPreviewLayers(
 
 export function mapPixelSize(map: MapData, tileW: number, tileH: number): { w: number; h: number } {
   return { w: map.width * tileW, h: map.height * tileH };
+}
+
+export function getEventAtTile(
+  events: MapEventSpec[] | undefined,
+  tileX: number,
+  tileY: number
+): MapEventSpec | null {
+  if (!events || events.length === 0) return null;
+  return events.find((event) => event.x === tileX && event.y === tileY) ?? null;
+}
+
+/**
+ * Draws small marker badges for event positions on top of map layers.
+ * Returns number of markers drawn (for tests).
+ */
+export function drawMapEventMarkers(
+  ctx: CanvasRenderingContext2D,
+  map: MapData,
+  tileW: number,
+  tileH: number
+): number {
+  if (!map.events?.length) return 0;
+  const radius = Math.max(5, Math.floor(Math.min(tileW, tileH) * 0.18));
+  let count = 0;
+
+  ctx.save();
+  for (const event of map.events) {
+    if (event.x < 0 || event.y < 0 || event.x >= map.width || event.y >= map.height) continue;
+    const cx = event.x * tileW + Math.floor(tileW / 2);
+    const cy = event.y * tileH + Math.floor(tileH / 2);
+    ctx.beginPath();
+    ctx.fillStyle = 'rgba(217, 70, 239, 0.95)';
+    ctx.strokeStyle = 'rgba(15, 23, 42, 0.95)';
+    ctx.lineWidth = 2;
+    ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    count += 1;
+  }
+  ctx.restore();
+  return count;
 }

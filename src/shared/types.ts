@@ -5,7 +5,8 @@
 // ============================================================
 
 export interface MapEventSpec {
-  type: 'npc' | 'item';
+  id?: number;
+  type: 'npc' | 'item' | 'event';
   x: number;
   y: number;
   name: string;

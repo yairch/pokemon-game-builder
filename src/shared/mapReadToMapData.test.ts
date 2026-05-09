@@ -44,4 +44,44 @@ describe('mapReadDataToMapData', () => {
       events: [],
     });
   });
+
+  it('maps read-map events for preview markers', () => {
+    const read: MapReadData = {
+      tilesetId: 7,
+      width: 2,
+      height: 2,
+      autoplayBgm: false,
+      bgm: null,
+      autoplayBgs: false,
+      bgs: null,
+      encounterStep: 25,
+      encounterList: [],
+      layers: [
+        [
+          [1, 2],
+          [3, 4],
+        ],
+      ],
+      events: [
+        {
+          id: 12,
+          name: 'Guide NPC',
+          x: 1,
+          y: 0,
+          pages: [],
+        },
+      ],
+    };
+
+    const m = mapReadDataToMapData(42, 'Test Town', read);
+    expect(m.events).toEqual([
+      {
+        id: 12,
+        type: 'event',
+        x: 1,
+        y: 0,
+        name: 'Guide NPC',
+      },
+    ]);
+  });
 });

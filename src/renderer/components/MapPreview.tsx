@@ -4,7 +4,9 @@ import { bridge } from '../services/bridge';
 import type { MapData, TilesetInspectorData } from '../../shared/types';
 import {
   DEFAULT_TILE_SIZE,
+  drawMapEventMarkers,
   drawMapPreviewLayers,
+  getEventAtTile,
   mapPixelSize,
   type MapPreviewTilesetImages,
 } from '../mapPreview/mapPreviewCanvas';
@@ -45,6 +47,7 @@ const MapPreview: React.FC<MapPreviewProps> = ({
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [hoverTile, setHoverTile] = useState<{ x: number; y: number } | null>(null);
+  const [hoverEvent, setHoverEvent] = useState<MapData['events'][number] | null>(null);
   const dragRef = useRef<{ active: boolean; lastX: number; lastY: number }>({
     active: false,
     lastX: 0,
@@ -55,6 +58,7 @@ const MapPreview: React.FC<MapPreviewProps> = ({
     setImages(null);
     setTilesetError(null);
     setHoverTile(null);
+    setHoverEvent(null);
     setZoom(1);
     setPan({ x: 0, y: 0 });
     if (!mapData || !projectPath) return;
@@ -121,6 +125,7 @@ const MapPreview: React.FC<MapPreviewProps> = ({
     ctx.imageSmoothingEnabled = false;
     ctx.clearRect(0, 0, w, h);
     drawMapPreviewLayers(ctx, { map: mapData, images });
+    drawMapEventMarkers(ctx, mapData, images.tileWidth, images.tileHeight);
   }, [mapData, images]);
 
   const onWheel = useCallback((e: React.WheelEvent) => {
@@ -146,6 +151,7 @@ const MapPreview: React.FC<MapPreviewProps> = ({
       }
       if (!vp || !mapData || !images) {
         setHoverTile(null);
+        setHoverEvent(null);
         return;
       }
       const rect = vp.getBoundingClientRect();
@@ -157,8 +163,10 @@ const MapPreview: React.FC<MapPreviewProps> = ({
       const mapY = Math.floor((vy - pan.y) / zoom / th);
       if (mapX >= 0 && mapY >= 0 && mapX < mapData.width && mapY < mapData.height) {
         setHoverTile({ x: mapX, y: mapY });
+        setHoverEvent(getEventAtTile(mapData.events, mapX, mapY));
       } else {
         setHoverTile(null);
+        setHoverEvent(null);
       }
     },
     [mapData, images, pan.x, pan.y, zoom]
@@ -171,6 +179,7 @@ const MapPreview: React.FC<MapPreviewProps> = ({
   const onMouseLeave = useCallback(() => {
     dragRef.current.active = false;
     setHoverTile(null);
+    setHoverEvent(null);
   }, []);
 
   return (
@@ -281,6 +290,14 @@ const MapPreview: React.FC<MapPreviewProps> = ({
                 </span>
               </>
             )}
+            {hoverEvent && (
+              <>
+                <span className="mx-2 text-zinc-300">·</span>
+                <span className="text-[11px] text-fuchsia-700">
+                  Event #{hoverEvent.id ?? '?'}: {hoverEvent.name}
+                </span>
+              </>
+            )}
           </div>
 
           {previewLoading && (
@@ -316,6 +333,15 @@ const MapPreview: React.FC<MapPreviewProps> = ({
             {!images && !tilesetLoading && !tilesetError && (
               <div className="absolute inset-0 flex items-center justify-center text-neutral-400 text-sm pointer-events-none">
                 Waiting for tileset…
+              </div>
+            )}
+            {images && hoverTile && hoverEvent && (
+              <div
+                className="pointer-events-none absolute left-2 top-2 rounded border border-fuchsia-200 bg-fuchsia-50/95 px-2 py-1 text-[11px] text-fuchsia-900 shadow"
+                role="status"
+                aria-label={`Event ${hoverEvent.id ?? ''} ${hoverEvent.name}`}
+              >
+                Event #{hoverEvent.id ?? '?'}: {hoverEvent.name}
               </div>
             )}
           </div>
