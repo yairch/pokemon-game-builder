@@ -27,6 +27,7 @@ export interface MapPreviewTilesetImages {
   main: CanvasImageSource;
   /** Index matches RPG Maker autotile slot (tile id 48+48*slot); empty slots are null. */
   autotiles: (CanvasImageSource | null)[];
+  eventCharacters?: Record<string, CanvasImageSource>;
   tileWidth: number;
   tileHeight: number;
   mainSheetWidth: number;
@@ -152,27 +153,78 @@ export function getEventAtTile(
 export function drawMapEventMarkers(
   ctx: CanvasRenderingContext2D,
   map: MapData,
+  images: MapPreviewTilesetImages,
   tileW: number,
   tileH: number
 ): number {
   if (!map.events?.length) return 0;
-  const radius = Math.max(5, Math.floor(Math.min(tileW, tileH) * 0.18));
-  let count = 0;
-
-  ctx.save();
+  const eventsByTile = new Map<string, MapEventSpec>();
   for (const event of map.events) {
     if (event.x < 0 || event.y < 0 || event.x >= map.width || event.y >= map.height) continue;
-    const cx = event.x * tileW + Math.floor(tileW / 2);
-    const cy = event.y * tileH + Math.floor(tileH / 2);
-    ctx.beginPath();
-    ctx.fillStyle = 'rgba(217, 70, 239, 0.95)';
-    ctx.strokeStyle = 'rgba(15, 23, 42, 0.95)';
+    const key = `${event.x},${event.y}`;
+    // RPG Maker behavior: one event per tile in this UX flow; first wins if duplicates exist.
+    if (!eventsByTile.has(key)) eventsByTile.set(key, event);
+  }
+
+  const overlayInset = Math.max(3, Math.floor(Math.min(tileW, tileH) * 0.12));
+  let rendered = 0;
+  ctx.save();
+  for (const event of eventsByTile.values()) {
+    const baseX = event.x * tileW;
+    const baseY = event.y * tileH;
+    const ox = baseX + overlayInset;
+    const oy = baseY + overlayInset;
+    const ow = Math.max(2, tileW - overlayInset * 2);
+    const oh = Math.max(2, tileH - overlayInset * 2);
+
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.18)';
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.98)';
     ctx.lineWidth = 2;
-    ctx.arc(cx, cy, radius, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.stroke();
-    count += 1;
+    ctx.fillRect(ox, oy, ow, oh);
+    ctx.strokeRect(ox + 0.5, oy + 0.5, Math.max(0, ow - 1), Math.max(0, oh - 1));
+
+    const characterName = (event.characterName || '').trim();
+    const characterSheet = characterName ? images.eventCharacters?.[characterName] : null;
+    if (characterSheet) {
+      // RMXP charset sheets are 4x4 frames; use the standing "down" frame.
+      const sheet: any = characterSheet as any;
+      const fw = Math.floor((sheet.naturalWidth || sheet.width || tileW) / 4);
+      const fh = Math.floor((sheet.naturalHeight || sheet.height || tileH) / 4);
+      if (fw > 0 && fh > 0) {
+        const directionToRow: Record<number, number> = {
+          2: 0, // down
+          4: 1, // left
+          6: 2, // right
+          8: 3, // up
+        };
+        const row = directionToRow[event.direction ?? 2] ?? 0;
+        const col = Math.max(0, Math.min(3, event.pattern ?? 0));
+        const sx = col * fw;
+        const sy = row * fh;
+        const scale = Math.min(ow / fw, oh / fh);
+        const dw = fw * scale;
+        const dh = fh * scale;
+        const dx = ox + (ow - dw) / 2;
+        const dy = oy + (oh - dh);
+        ctx.save();
+        ctx.globalAlpha = 0.95;
+        ctx.drawImage(characterSheet, sx, sy, fw, fh, dx, dy, dw, dh);
+        ctx.restore();
+      }
+    } else {
+      const graphicTileId = event.graphicTileId ?? 0;
+      if (graphicTileId > 0) {
+        const rect = regularTileSourceRect(graphicTileId, tileW, tileH, images.mainSheetWidth);
+        if (rect) {
+          ctx.save();
+          ctx.globalAlpha = 0.95;
+          ctx.drawImage(images.main, rect.sx, rect.sy, rect.sw, rect.sh, ox, oy, ow, oh);
+          ctx.restore();
+        }
+      }
+    }
+    rendered += 1;
   }
   ctx.restore();
-  return count;
+  return rendered;
 }

@@ -101,10 +101,21 @@ const MapPreview: React.FC<MapPreviewProps> = ({
             /* skip broken autotile */
           }
         }
+        const eventCharacters: Record<string, HTMLImageElement> = {};
+        const charEntries = Object.entries(d.eventCharacterImageDataUrls || {});
+        for (const [characterName, characterSrc] of charEntries) {
+          if (!characterSrc) continue;
+          try {
+            eventCharacters[characterName] = await loadImageFromSrc(characterSrc);
+          } catch {
+            /* skip broken character sheet */
+          }
+        }
         if (cancelled) return;
         setImages({
           main,
           autotiles,
+          eventCharacters,
           tileWidth: tw,
           tileHeight: th,
           mainSheetWidth: main.naturalWidth,
@@ -133,10 +144,10 @@ const MapPreview: React.FC<MapPreviewProps> = ({
     ctx.clearRect(0, 0, w, h);
     drawMapPreviewLayers(ctx, { map: mapData, images });
     if (showGrid) drawMapGrid(ctx, mapData, images.tileWidth, images.tileHeight);
-    drawMapEventMarkers(ctx, mapData, images.tileWidth, images.tileHeight);
     if (selectedTile) {
       drawSelectedTileHighlight(ctx, selectedTile.x, selectedTile.y, images.tileWidth, images.tileHeight);
     }
+    drawMapEventMarkers(ctx, mapData, images, images.tileWidth, images.tileHeight);
   }, [mapData, images, selectedTile, showGrid]);
 
   const pointerToTile = useCallback(
@@ -392,15 +403,6 @@ const MapPreview: React.FC<MapPreviewProps> = ({
             {!images && !tilesetLoading && !tilesetError && (
               <div className="absolute inset-0 flex items-center justify-center text-neutral-400 text-sm pointer-events-none">
                 Waiting for tileset…
-              </div>
-            )}
-            {images && hoverTile && hoverEvent && (
-              <div
-                className="pointer-events-none absolute left-2 top-2 rounded border border-fuchsia-200 bg-fuchsia-50/95 px-2 py-1 text-[11px] text-fuchsia-900 shadow"
-                role="status"
-                aria-label={`Event ${hoverEvent.id ?? ''} ${hoverEvent.name}`}
-              >
-                Event #{hoverEvent.id ?? '?'}: {hoverEvent.name}
               </div>
             )}
           </div>

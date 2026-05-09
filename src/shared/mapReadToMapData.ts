@@ -12,14 +12,24 @@ export function mapReadDataToMapData(mapId: number, mapName: string, read: MapRe
     height: read.height,
     tilesetId: read.tilesetId,
     layers: read.layers,
-    events: (read.events || []).map((event) => ({
-      id: event.id,
-      type: 'event',
-      x: event.x,
-      y: event.y,
-      name: event.name || `Event ${event.id}`,
-      graphicTileId: event.pages?.[0]?.graphic?.tileId || 0,
-      characterName: event.pages?.[0]?.graphic?.characterName || '',
-    })),
+    events: (read.events || []).map((event) => {
+      const previewPage =
+        event.pages?.find((page) => {
+          const g = page?.graphic;
+          return Boolean((g?.characterName && g.characterName.trim()) || (g?.tileId ?? 0) > 0);
+        }) || event.pages?.[0];
+      const graphic = previewPage?.graphic;
+      return {
+        id: event.id,
+        type: 'event',
+        x: event.x,
+        y: event.y,
+        name: event.name || `Event ${event.id}`,
+        graphicTileId: graphic?.tileId || 0,
+        characterName: graphic?.characterName || '',
+        direction: graphic?.direction || 2,
+        pattern: graphic?.pattern || 0,
+      };
+    }),
   };
 }

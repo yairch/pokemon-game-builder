@@ -12,6 +12,8 @@ export interface MapEventSpec {
   name: string;
   graphicTileId?: number;
   characterName?: string;
+  direction?: number;
+  pattern?: number;
 }
 
 export interface MapSpec {
@@ -148,6 +150,7 @@ export interface TilesetInspectorData {
   autotileImagePaths: string[];
   autotileImageUrls: string[];
   autotileImageDataUrls: string[];
+  eventCharacterImageDataUrls?: Record<string, string>;
   tileWidth: number;
   tileHeight: number;
 }

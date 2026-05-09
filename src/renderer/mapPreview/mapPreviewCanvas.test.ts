@@ -144,7 +144,7 @@ describe('getEventAtTile', () => {
 });
 
 describe('drawMapEventMarkers', () => {
-  it('draws one marker per in-bounds event', () => {
+  it('draws one overlay per in-bounds event tile', () => {
     const map: MapData = {
       id: 1,
       name: 'WithEvents',
@@ -153,7 +153,7 @@ describe('drawMapEventMarkers', () => {
       tilesetId: 1,
       layers: [[[0]]],
       events: [
-        { id: 1, type: 'event', name: 'NPC', x: 1, y: 2 },
+        { id: 1, type: 'event', name: 'NPC', x: 1, y: 2, graphicTileId: 384 },
         { id: 2, type: 'event', name: 'Sign', x: 4, y: 6 },
       ],
     };
@@ -161,18 +161,125 @@ describe('drawMapEventMarkers', () => {
     const ctx = {
       save: vi.fn(),
       restore: vi.fn(),
-      beginPath: vi.fn(),
-      arc: vi.fn(),
-      fill: vi.fn(),
-      stroke: vi.fn(),
+      drawImage: vi.fn(),
+      fillRect: vi.fn(),
+      strokeRect: vi.fn(),
+      globalAlpha: 1,
       fillStyle: '',
       strokeStyle: '',
       lineWidth: 0,
     } as unknown as CanvasRenderingContext2D;
 
-    const drawn = drawMapEventMarkers(ctx, map, 32, 32);
+    const drawn = drawMapEventMarkers(
+      ctx,
+      map,
+      {
+        main: { naturalWidth: 256 } as unknown as HTMLImageElement,
+        autotiles: [],
+        eventCharacters: {},
+        tileWidth: 32,
+        tileHeight: 32,
+        mainSheetWidth: 256,
+      },
+      32,
+      32
+    );
     expect(drawn).toBe(2);
-    expect(ctx.arc).toHaveBeenCalledTimes(2);
+    expect(ctx.fillRect).toHaveBeenCalledTimes(2);
+    expect(ctx.drawImage).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps only one event overlay when multiple events share tile', () => {
+    const map: MapData = {
+      id: 2,
+      name: 'Overlap',
+      width: 4,
+      height: 4,
+      tilesetId: 1,
+      layers: [[[0]]],
+      events: [
+        { id: 1, type: 'event', name: 'A', x: 2, y: 1 },
+        { id: 2, type: 'event', name: 'B', x: 2, y: 1 },
+        { id: 3, type: 'event', name: 'C', x: 2, y: 1 },
+      ],
+    };
+    const ctx = {
+      save: vi.fn(),
+      restore: vi.fn(),
+      drawImage: vi.fn(),
+      fillRect: vi.fn(),
+      strokeRect: vi.fn(),
+      globalAlpha: 1,
+      fillStyle: '',
+      strokeStyle: '',
+      lineWidth: 0,
+    } as unknown as CanvasRenderingContext2D;
+    const drawn = drawMapEventMarkers(
+      ctx,
+      map,
+      {
+        main: { naturalWidth: 256 } as unknown as HTMLImageElement,
+        autotiles: [],
+        eventCharacters: {},
+        tileWidth: 32,
+        tileHeight: 32,
+        mainSheetWidth: 256,
+      },
+      32,
+      32
+    );
+    expect(drawn).toBe(1);
+    expect(ctx.fillRect).toHaveBeenCalledTimes(1);
+  });
+
+  it('prefers character sprite rendering and uses direction/pattern frame', () => {
+    const map: MapData = {
+      id: 3,
+      name: 'CharacterEvent',
+      width: 3,
+      height: 3,
+      tilesetId: 1,
+      layers: [[[0]]],
+      events: [{ id: 1, type: 'event', name: 'NPC', x: 1, y: 1, characterName: 'npc001', direction: 6, pattern: 2 }],
+    };
+    const characterSheet = { naturalWidth: 128, naturalHeight: 192 } as unknown as HTMLImageElement;
+    const ctx = {
+      save: vi.fn(),
+      restore: vi.fn(),
+      drawImage: vi.fn(),
+      fillRect: vi.fn(),
+      strokeRect: vi.fn(),
+      globalAlpha: 1,
+      fillStyle: '',
+      strokeStyle: '',
+      lineWidth: 0,
+    } as unknown as CanvasRenderingContext2D;
+    const drawn = drawMapEventMarkers(
+      ctx,
+      map,
+      {
+        main: { naturalWidth: 256 } as unknown as HTMLImageElement,
+        autotiles: [],
+        eventCharacters: { npc001: characterSheet },
+        tileWidth: 32,
+        tileHeight: 32,
+        mainSheetWidth: 256,
+      },
+      32,
+      32
+    );
+    expect(drawn).toBe(1);
+    expect(ctx.drawImage).toHaveBeenCalledWith(
+      characterSheet,
+      64,
+      96,
+      32,
+      48,
+      expect.any(Number),
+      expect.any(Number),
+      expect.any(Number),
+      expect.any(Number)
+    );
   });
 });
 

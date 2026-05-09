@@ -421,12 +421,26 @@ export async function handleTilesetInspector(projectPath: string, mapId?: number
     const autotileImagePaths = names.map((n) => (n ? resolveAutotileImagePath(projectPath, n) : ''));
     const autotileImageUrls = autotileImagePaths.map((p) => (p ? toFileUrl(p) : ''));
     const autotileImageDataUrls = autotileImagePaths.map((p) => (p ? toDataUrl(p) : ''));
+    const eventCharacterImageDataUrls: Record<string, string> = {};
+    for (const evt of map.events || []) {
+      const previewPage =
+        evt.pages?.find((page: any) => {
+          const g = page?.graphic;
+          return Boolean((g?.characterName && String(g.characterName).trim()) || (g?.tileId ?? 0) > 0);
+        }) || evt.pages?.[0];
+      const characterName = previewPage?.graphic?.characterName;
+      if (!characterName || eventCharacterImageDataUrls[characterName]) continue;
+      const characterPath = resolveCharacterImagePath(projectPath, characterName);
+      const dataUrl = toDataUrl(characterPath);
+      if (dataUrl) eventCharacterImageDataUrls[characterName] = dataUrl;
+    }
 
     const data: TilesetInspectorData = {
       mapName: mapEntry.name, mapId: mapEntry.id,
       tilesetId: map.tilesetId, tilesetName: tileset.tilesetName,
       tilesetImagePath, tilesetImageUrl: toFileUrl(tilesetImagePath), tilesetImageDataUrl: toDataUrl(tilesetImagePath),
       autotileImagePaths, autotileImageUrls, autotileImageDataUrls,
+      eventCharacterImageDataUrls,
       tileWidth: 32, tileHeight: 32
     };
     return { success: true, data };
@@ -922,6 +936,13 @@ function resolveTilesetImagePath(projectPath: string, tilesetName: string): stri
 
 function resolveAutotileImagePath(projectPath: string, autotileName: string): string {
   const base = path.join(projectPath, 'Graphics', 'Autotiles', autotileName);
+  if (fs.existsSync(`${base}.png`)) return `${base}.png`;
+  if (fs.existsSync(`${base}.bmp`)) return `${base}.bmp`;
+  return base;
+}
+
+function resolveCharacterImagePath(projectPath: string, characterName: string): string {
+  const base = path.join(projectPath, 'Graphics', 'Characters', characterName);
   if (fs.existsSync(`${base}.png`)) return `${base}.png`;
   if (fs.existsSync(`${base}.bmp`)) return `${base}.bmp`;
   return base;
