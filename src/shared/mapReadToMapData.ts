@@ -18,6 +18,8 @@ export function mapReadDataToMapData(mapId: number, mapName: string, read: MapRe
       x: event.x,
       y: event.y,
       name: event.name || `Event ${event.id}`,
+      graphicTileId: event.pages?.[0]?.graphic?.tileId || 0,
+      characterName: event.pages?.[0]?.graphic?.characterName || '',
     })),
   };
 }

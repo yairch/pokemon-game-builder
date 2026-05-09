@@ -1,10 +1,11 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Layers, ZoomIn, ZoomOut, RotateCcw } from 'lucide-react';
+import { Layers, ZoomIn, ZoomOut, RotateCcw, Grid3x3 } from 'lucide-react';
 import { bridge } from '../services/bridge';
 import type { MapData, TilesetInspectorData } from '../../shared/types';
 import {
   DEFAULT_TILE_SIZE,
   drawMapEventMarkers,
+  drawMapGrid,
   drawMapPreviewLayers,
   getEventAtTile,
   mapPixelSize,
@@ -45,6 +46,7 @@ const MapPreview: React.FC<MapPreviewProps> = ({
   const [tilesetLoading, setTilesetLoading] = useState(false);
   const [images, setImages] = useState<MapPreviewTilesetImages | null>(null);
   const [zoom, setZoom] = useState(1);
+  const [showGrid, setShowGrid] = useState(true);
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [hoverTile, setHoverTile] = useState<{ x: number; y: number } | null>(null);
   const [hoverEvent, setHoverEvent] = useState<MapData['events'][number] | null>(null);
@@ -60,6 +62,7 @@ const MapPreview: React.FC<MapPreviewProps> = ({
     setHoverTile(null);
     setHoverEvent(null);
     setZoom(1);
+    setShowGrid(true);
     setPan({ x: 0, y: 0 });
     if (!mapData || !projectPath) return;
 
@@ -125,8 +128,9 @@ const MapPreview: React.FC<MapPreviewProps> = ({
     ctx.imageSmoothingEnabled = false;
     ctx.clearRect(0, 0, w, h);
     drawMapPreviewLayers(ctx, { map: mapData, images });
+    if (showGrid) drawMapGrid(ctx, mapData, images.tileWidth, images.tileHeight);
     drawMapEventMarkers(ctx, mapData, images.tileWidth, images.tileHeight);
-  }, [mapData, images]);
+  }, [mapData, images, showGrid]);
 
   const onWheel = useCallback((e: React.WheelEvent) => {
     e.preventDefault();
@@ -230,6 +234,20 @@ const MapPreview: React.FC<MapPreviewProps> = ({
               title="Reset view"
             >
               <RotateCcw size={16} strokeWidth={2} />
+            </button>
+            <button
+              type="button"
+              className={`inline-flex h-8 w-8 items-center justify-center rounded-md border transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/50 ${
+                showGrid
+                  ? 'border-blue-300 bg-blue-100/70 text-blue-700 hover:bg-blue-100'
+                  : 'border-transparent text-zinc-600 hover:bg-white hover:text-zinc-900'
+              }`}
+              onClick={() => setShowGrid((v) => !v)}
+              aria-label={showGrid ? 'Hide grid' : 'Show grid'}
+              title={showGrid ? 'Hide grid' : 'Show grid'}
+              aria-pressed={showGrid}
+            >
+              <Grid3x3 size={16} strokeWidth={2} />
             </button>
             <span className="mx-2 min-w-[2.75rem] text-center font-mono text-[11px] font-medium tabular-nums text-zinc-500">
               {Math.round(zoom * 100)}%
@@ -346,7 +364,7 @@ const MapPreview: React.FC<MapPreviewProps> = ({
             )}
           </div>
           <p className="text-[11px] leading-snug text-zinc-400">
-            Drag to pan · Scroll to zoom · Autotiles use a single static frame (MVP)
+            Drag to pan · Scroll to zoom · Grid toggle in toolbar · Autotiles use a single static frame (MVP)
           </p>
         </div>
       )}

@@ -3,6 +3,7 @@ import type { MapData } from '../../shared/types';
 import {
   autotileSlotIndex,
   drawMapEventMarkers,
+  drawMapGrid,
   drawMapPreviewLayers,
   getEventAtTile,
   mapPixelSize,
@@ -171,5 +172,29 @@ describe('drawMapEventMarkers', () => {
     const drawn = drawMapEventMarkers(ctx, map, 32, 32);
     expect(drawn).toBe(2);
     expect(ctx.arc).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('drawMapGrid', () => {
+  it('draws width+1 vertical and height+1 horizontal lines', () => {
+    const map = {
+      width: 4,
+      height: 3,
+    } as MapData;
+
+    const ctx = {
+      save: vi.fn(),
+      restore: vi.fn(),
+      beginPath: vi.fn(),
+      moveTo: vi.fn(),
+      lineTo: vi.fn(),
+      stroke: vi.fn(),
+      strokeStyle: '',
+      lineWidth: 0,
+    } as unknown as CanvasRenderingContext2D;
+
+    const lines = drawMapGrid(ctx, map, 32, 32);
+    expect(lines).toBe(9);
+    expect(ctx.stroke).toHaveBeenCalledTimes(9);
   });
 });

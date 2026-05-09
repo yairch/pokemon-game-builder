@@ -81,6 +81,41 @@ export function mapPixelSize(map: MapData, tileW: number, tileH: number): { w: n
   return { w: map.width * tileW, h: map.height * tileH };
 }
 
+export function drawMapGrid(
+  ctx: CanvasRenderingContext2D,
+  map: MapData,
+  tileW: number,
+  tileH: number
+): number {
+  const widthPx = map.width * tileW;
+  const heightPx = map.height * tileH;
+  let lines = 0;
+
+  ctx.save();
+  ctx.strokeStyle = 'rgba(148, 163, 184, 0.58)';
+  ctx.lineWidth = 1;
+
+  for (let x = 0; x <= map.width; x += 1) {
+    const px = x * tileW + 0.5;
+    ctx.beginPath();
+    ctx.moveTo(px, 0);
+    ctx.lineTo(px, heightPx);
+    ctx.stroke();
+    lines += 1;
+  }
+  for (let y = 0; y <= map.height; y += 1) {
+    const py = y * tileH + 0.5;
+    ctx.beginPath();
+    ctx.moveTo(0, py);
+    ctx.lineTo(widthPx, py);
+    ctx.stroke();
+    lines += 1;
+  }
+  ctx.restore();
+
+  return lines;
+}
+
 export function getEventAtTile(
   events: MapEventSpec[] | undefined,
   tileX: number,

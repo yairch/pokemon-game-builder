@@ -10,6 +10,8 @@ export interface MapEventSpec {
   x: number;
   y: number;
   name: string;
+  graphicTileId?: number;
+  characterName?: string;
 }
 
 export interface MapSpec {
