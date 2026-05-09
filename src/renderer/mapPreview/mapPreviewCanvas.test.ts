@@ -76,6 +76,9 @@ describe('drawMapPreviewLayers', () => {
     const ctx = {
       clearRect: vi.fn(),
       drawImage: vi.fn(),
+      save: vi.fn(),
+      restore: vi.fn(),
+      globalAlpha: 1,
       imageSmoothingEnabled: true,
     } as unknown as CanvasRenderingContext2D;
     const main = { naturalWidth: 256 } as unknown as HTMLImageElement;
@@ -106,6 +109,9 @@ describe('drawMapPreviewLayers', () => {
     const auto = { naturalWidth: 96 } as unknown as HTMLImageElement;
     const ctx = {
       drawImage: vi.fn(),
+      save: vi.fn(),
+      restore: vi.fn(),
+      globalAlpha: 1,
     } as unknown as CanvasRenderingContext2D;
     const autotiles: (HTMLImageElement | null)[] = [auto];
     const draws = drawMapPreviewLayers(ctx, {
@@ -120,6 +126,48 @@ describe('drawMapPreviewLayers', () => {
     });
     expect(draws).toBe(1);
     expect(ctx.drawImage).toHaveBeenCalledWith(auto, 0, 0, 32, 32, 0, 0, 32, 32);
+  });
+
+  it('dims non-focused tile layers when layer focus mode is active', () => {
+    const map: MapData = {
+      id: 7,
+      name: 'Focus',
+      width: 1,
+      height: 1,
+      tilesetId: 1,
+      layers: [[[384]], [[385]], [[386]]],
+      events: [],
+    };
+    const alphaWrites: number[] = [];
+    const ctx: any = {
+      drawImage: vi.fn(),
+      save: vi.fn(),
+      restore: vi.fn(),
+      _globalAlpha: 1,
+    };
+    Object.defineProperty(ctx, 'globalAlpha', {
+      get() {
+        return this._globalAlpha;
+      },
+      set(value: number) {
+        alphaWrites.push(value);
+        this._globalAlpha = value;
+      },
+    });
+    drawMapPreviewLayers(ctx as CanvasRenderingContext2D, {
+      map,
+      images: {
+        main: { naturalWidth: 256 } as unknown as HTMLImageElement,
+        autotiles: [],
+        tileWidth: 32,
+        tileHeight: 32,
+        mainSheetWidth: 256,
+      },
+      focusMode: 'l2',
+      dimOpacity: 0.25,
+    });
+    expect(alphaWrites).toEqual([0.25, 1, 0.25]);
+    expect(ctx.drawImage).toHaveBeenCalledTimes(3);
   });
 });
 
@@ -280,6 +328,114 @@ describe('drawMapEventMarkers', () => {
       expect.any(Number),
       expect.any(Number)
     );
+  });
+
+  it('emphasizes event overlays and applies marker opacity in events mode', () => {
+    const map: MapData = {
+      id: 4,
+      name: 'EventsFocus',
+      width: 3,
+      height: 3,
+      tilesetId: 1,
+      layers: [[[0]]],
+      events: [{ id: 9, type: 'event', name: 'NPC', x: 1, y: 1 }],
+    };
+    const alphaWrites: number[] = [];
+    const ctx: any = {
+      save: vi.fn(),
+      restore: vi.fn(),
+      drawImage: vi.fn(),
+      fillRect: vi.fn(),
+      strokeRect: vi.fn(),
+      fillStyle: '',
+      strokeStyle: '',
+      lineWidth: 0,
+      _globalAlpha: 1,
+    };
+    Object.defineProperty(ctx, 'globalAlpha', {
+      get() {
+        return this._globalAlpha;
+      },
+      set(value: number) {
+        alphaWrites.push(value);
+        this._globalAlpha = value;
+      },
+    });
+    const drawn = drawMapEventMarkers(
+      ctx as CanvasRenderingContext2D,
+      map,
+      {
+        main: { naturalWidth: 256 } as unknown as HTMLImageElement,
+        autotiles: [],
+        eventCharacters: {},
+        tileWidth: 32,
+        tileHeight: 32,
+        mainSheetWidth: 256,
+      },
+      32,
+      32,
+      {
+        emphasized: true,
+        markerOpacity: 0.5,
+      }
+    );
+    expect(drawn).toBe(1);
+    expect(alphaWrites[0]).toBe(0.5);
+    expect(ctx.strokeStyle).toBe('rgba(236, 72, 153, 0.98)');
+    expect(ctx.lineWidth).toBe(2.5);
+  });
+
+  it('applies marker opacity to sprite draws in non-events focus modes', () => {
+    const map: MapData = {
+      id: 5,
+      name: 'OpacityPropagation',
+      width: 3,
+      height: 3,
+      tilesetId: 1,
+      layers: [[[0]]],
+      events: [{ id: 11, type: 'event', name: 'NPC', x: 1, y: 1, characterName: 'npc001' }],
+    };
+    const alphaWrites: number[] = [];
+    const characterSheet = { naturalWidth: 128, naturalHeight: 192 } as unknown as HTMLImageElement;
+    const ctx: any = {
+      save: vi.fn(),
+      restore: vi.fn(),
+      drawImage: vi.fn(),
+      fillRect: vi.fn(),
+      strokeRect: vi.fn(),
+      fillStyle: '',
+      strokeStyle: '',
+      lineWidth: 0,
+      _globalAlpha: 1,
+    };
+    Object.defineProperty(ctx, 'globalAlpha', {
+      get() {
+        return this._globalAlpha;
+      },
+      set(value: number) {
+        alphaWrites.push(value);
+        this._globalAlpha = value;
+      },
+    });
+    drawMapEventMarkers(
+      ctx as CanvasRenderingContext2D,
+      map,
+      {
+        main: { naturalWidth: 256 } as unknown as HTMLImageElement,
+        autotiles: [],
+        eventCharacters: { npc001: characterSheet },
+        tileWidth: 32,
+        tileHeight: 32,
+        mainSheetWidth: 256,
+      },
+      32,
+      32,
+      {
+        markerOpacity: 0.42,
+      }
+    );
+    expect(alphaWrites).toContain(0.42);
+    expect(alphaWrites.some((value) => Math.abs(value - 0.399) < 1e-9)).toBe(true);
   });
 });
 
