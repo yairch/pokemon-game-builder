@@ -1,10 +1,14 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Layers, ZoomIn, ZoomOut, RotateCcw } from 'lucide-react';
+import { Layers, ZoomIn, ZoomOut, RotateCcw, Grid3x3 } from 'lucide-react';
 import { bridge } from '../services/bridge';
 import type { MapData, TilesetInspectorData } from '../../shared/types';
 import {
   DEFAULT_TILE_SIZE,
+  drawMapEventMarkers,
+  drawMapGrid,
   drawMapPreviewLayers,
+  drawSelectedTileHighlight,
+  getEventAtTile,
   mapPixelSize,
   type MapPreviewTilesetImages,
 } from '../mapPreview/mapPreviewCanvas';
@@ -43,19 +47,26 @@ const MapPreview: React.FC<MapPreviewProps> = ({
   const [tilesetLoading, setTilesetLoading] = useState(false);
   const [images, setImages] = useState<MapPreviewTilesetImages | null>(null);
   const [zoom, setZoom] = useState(1);
+  const [showGrid, setShowGrid] = useState(true);
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [hoverTile, setHoverTile] = useState<{ x: number; y: number } | null>(null);
+  const [selectedTile, setSelectedTile] = useState<{ x: number; y: number } | null>(null);
+  const [hoverEvent, setHoverEvent] = useState<MapData['events'][number] | null>(null);
   const dragRef = useRef<{ active: boolean; lastX: number; lastY: number }>({
     active: false,
     lastX: 0,
     lastY: 0,
   });
+  const pointerRef = useRef<{ moved: boolean }>({ moved: false });
 
   useEffect(() => {
     setImages(null);
     setTilesetError(null);
     setHoverTile(null);
+    setHoverEvent(null);
+    setSelectedTile(null);
     setZoom(1);
+    setShowGrid(true);
     setPan({ x: 0, y: 0 });
     if (!mapData || !projectPath) return;
 
@@ -90,10 +101,21 @@ const MapPreview: React.FC<MapPreviewProps> = ({
             /* skip broken autotile */
           }
         }
+        const eventCharacters: Record<string, HTMLImageElement> = {};
+        const charEntries = Object.entries(d.eventCharacterImageDataUrls || {});
+        for (const [characterName, characterSrc] of charEntries) {
+          if (!characterSrc) continue;
+          try {
+            eventCharacters[characterName] = await loadImageFromSrc(characterSrc);
+          } catch {
+            /* skip broken character sheet */
+          }
+        }
         if (cancelled) return;
         setImages({
           main,
           autotiles,
+          eventCharacters,
           tileWidth: tw,
           tileHeight: th,
           mainSheetWidth: main.naturalWidth,
@@ -121,7 +143,27 @@ const MapPreview: React.FC<MapPreviewProps> = ({
     ctx.imageSmoothingEnabled = false;
     ctx.clearRect(0, 0, w, h);
     drawMapPreviewLayers(ctx, { map: mapData, images });
-  }, [mapData, images]);
+    if (showGrid) drawMapGrid(ctx, mapData, images.tileWidth, images.tileHeight);
+    if (selectedTile) {
+      drawSelectedTileHighlight(ctx, selectedTile.x, selectedTile.y, images.tileWidth, images.tileHeight);
+    }
+    drawMapEventMarkers(ctx, mapData, images, images.tileWidth, images.tileHeight);
+  }, [mapData, images, selectedTile, showGrid]);
+
+  const pointerToTile = useCallback(
+    (clientX: number, clientY: number): { x: number; y: number } | null => {
+      const vp = viewportRef.current;
+      if (!vp || !mapData || !images) return null;
+      const rect = vp.getBoundingClientRect();
+      const vx = clientX - rect.left;
+      const vy = clientY - rect.top;
+      const mapX = Math.floor((vx - pan.x) / zoom / images.tileWidth);
+      const mapY = Math.floor((vy - pan.y) / zoom / images.tileHeight);
+      if (mapX < 0 || mapY < 0 || mapX >= mapData.width || mapY >= mapData.height) return null;
+      return { x: mapX, y: mapY };
+    },
+    [images, mapData, pan.x, pan.y, zoom]
+  );
 
   const onWheel = useCallback((e: React.WheelEvent) => {
     e.preventDefault();
@@ -132,6 +174,7 @@ const MapPreview: React.FC<MapPreviewProps> = ({
   const onMouseDown = useCallback((e: React.MouseEvent) => {
     if (e.button !== 0) return;
     dragRef.current = { active: true, lastX: e.clientX, lastY: e.clientY };
+    pointerRef.current = { moved: false };
   }, []);
 
   const onMouseMove = useCallback(
@@ -140,37 +183,39 @@ const MapPreview: React.FC<MapPreviewProps> = ({
       if (dragRef.current.active) {
         const dx = e.clientX - dragRef.current.lastX;
         const dy = e.clientY - dragRef.current.lastY;
+        if (Math.abs(dx) + Math.abs(dy) > 2) pointerRef.current.moved = true;
         dragRef.current.lastX = e.clientX;
         dragRef.current.lastY = e.clientY;
         setPan((p) => ({ x: p.x + dx, y: p.y + dy }));
       }
       if (!vp || !mapData || !images) {
         setHoverTile(null);
+        setHoverEvent(null);
         return;
       }
-      const rect = vp.getBoundingClientRect();
-      const vx = e.clientX - rect.left;
-      const vy = e.clientY - rect.top;
-      const tw = images.tileWidth;
-      const th = images.tileHeight;
-      const mapX = Math.floor((vx - pan.x) / zoom / tw);
-      const mapY = Math.floor((vy - pan.y) / zoom / th);
-      if (mapX >= 0 && mapY >= 0 && mapX < mapData.width && mapY < mapData.height) {
-        setHoverTile({ x: mapX, y: mapY });
+      const tile = pointerToTile(e.clientX, e.clientY);
+      if (tile) {
+        setHoverTile(tile);
+        setHoverEvent(getEventAtTile(mapData.events, tile.x, tile.y));
       } else {
         setHoverTile(null);
+        setHoverEvent(null);
       }
     },
-    [mapData, images, pan.x, pan.y, zoom]
+    [images, mapData, pointerToTile]
   );
 
-  const onMouseUp = useCallback(() => {
+  const onMouseUp = useCallback((e: React.MouseEvent) => {
+    if (!pointerRef.current.moved) {
+      setSelectedTile(pointerToTile(e.clientX, e.clientY));
+    }
     dragRef.current.active = false;
-  }, []);
+  }, [pointerToTile]);
 
   const onMouseLeave = useCallback(() => {
     dragRef.current.active = false;
     setHoverTile(null);
+    setHoverEvent(null);
   }, []);
 
   return (
@@ -221,6 +266,20 @@ const MapPreview: React.FC<MapPreviewProps> = ({
               title="Reset view"
             >
               <RotateCcw size={16} strokeWidth={2} />
+            </button>
+            <button
+              type="button"
+              className={`inline-flex h-8 w-8 items-center justify-center rounded-md border transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/50 ${
+                showGrid
+                  ? 'border-blue-300 bg-blue-100/70 text-blue-700 hover:bg-blue-100'
+                  : 'border-transparent text-zinc-600 hover:bg-white hover:text-zinc-900'
+              }`}
+              onClick={() => setShowGrid((v) => !v)}
+              aria-label={showGrid ? 'Hide grid' : 'Show grid'}
+              title={showGrid ? 'Hide grid' : 'Show grid'}
+              aria-pressed={showGrid}
+            >
+              <Grid3x3 size={16} strokeWidth={2} />
             </button>
             <span className="mx-2 min-w-[2.75rem] text-center font-mono text-[11px] font-medium tabular-nums text-zinc-500">
               {Math.round(zoom * 100)}%
@@ -281,6 +340,34 @@ const MapPreview: React.FC<MapPreviewProps> = ({
                 </span>
               </>
             )}
+            {hoverEvent && (
+              <>
+                <span className="mx-2 text-zinc-300">·</span>
+                <span className="text-[11px] text-fuchsia-700">
+                  Event #{hoverEvent.id ?? '?'}: {hoverEvent.name}
+                </span>
+              </>
+            )}
+            {selectedTile && (
+              <>
+                <span className="mx-2 text-zinc-300">·</span>
+                <span className="font-mono text-[11px] text-blue-700">
+                  Selected {selectedTile.x}, {selectedTile.y}
+                </span>
+                <span className="mx-2 text-zinc-300">·</span>
+                <span className="font-mono text-[11px] text-blue-600">
+                  L1 {(mapData.layers?.[0]?.[selectedTile.y]?.[selectedTile.x] ?? 0)}
+                </span>
+                <span className="font-mono text-[11px] text-blue-600">
+                  {' '}
+                  L2 {(mapData.layers?.[1]?.[selectedTile.y]?.[selectedTile.x] ?? 0)}
+                </span>
+                <span className="font-mono text-[11px] text-blue-600">
+                  {' '}
+                  L3 {(mapData.layers?.[2]?.[selectedTile.y]?.[selectedTile.x] ?? 0)}
+                </span>
+              </>
+            )}
           </div>
 
           {previewLoading && (
@@ -320,7 +407,7 @@ const MapPreview: React.FC<MapPreviewProps> = ({
             )}
           </div>
           <p className="text-[11px] leading-snug text-zinc-400">
-            Drag to pan · Scroll to zoom · Autotiles use a single static frame (MVP)
+            Click tile to select · Drag to pan · Scroll to zoom · Grid toggle in toolbar · Autotiles use a single static frame (MVP)
           </p>
         </div>
       )}

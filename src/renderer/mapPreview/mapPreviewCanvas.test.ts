@@ -2,7 +2,11 @@ import { describe, it, expect, vi } from 'vitest';
 import type { MapData } from '../../shared/types';
 import {
   autotileSlotIndex,
+  drawMapEventMarkers,
+  drawMapGrid,
   drawMapPreviewLayers,
+  drawSelectedTileHighlight,
+  getEventAtTile,
   mapPixelSize,
   regularTileSourceRect,
 } from './mapPreviewCanvas';
@@ -116,5 +120,208 @@ describe('drawMapPreviewLayers', () => {
     });
     expect(draws).toBe(1);
     expect(ctx.drawImage).toHaveBeenCalledWith(auto, 0, 0, 32, 32, 0, 0, 32, 32);
+  });
+});
+
+describe('getEventAtTile', () => {
+  it('returns event when tile has one', () => {
+    const event = getEventAtTile(
+      [
+        { id: 2, type: 'event', name: 'Greeter', x: 3, y: 4 },
+        { id: 3, type: 'event', name: 'Sign', x: 5, y: 6 },
+      ],
+      3,
+      4
+    );
+    expect(event?.id).toBe(2);
+    expect(event?.name).toBe('Greeter');
+  });
+
+  it('returns null when tile has no event', () => {
+    const event = getEventAtTile([{ id: 2, type: 'event', name: 'Greeter', x: 3, y: 4 }], 0, 0);
+    expect(event).toBeNull();
+  });
+});
+
+describe('drawMapEventMarkers', () => {
+  it('draws one overlay per in-bounds event tile', () => {
+    const map: MapData = {
+      id: 1,
+      name: 'WithEvents',
+      width: 8,
+      height: 8,
+      tilesetId: 1,
+      layers: [[[0]]],
+      events: [
+        { id: 1, type: 'event', name: 'NPC', x: 1, y: 2, graphicTileId: 384 },
+        { id: 2, type: 'event', name: 'Sign', x: 4, y: 6 },
+      ],
+    };
+
+    const ctx = {
+      save: vi.fn(),
+      restore: vi.fn(),
+      drawImage: vi.fn(),
+      fillRect: vi.fn(),
+      strokeRect: vi.fn(),
+      globalAlpha: 1,
+      fillStyle: '',
+      strokeStyle: '',
+      lineWidth: 0,
+    } as unknown as CanvasRenderingContext2D;
+
+    const drawn = drawMapEventMarkers(
+      ctx,
+      map,
+      {
+        main: { naturalWidth: 256 } as unknown as HTMLImageElement,
+        autotiles: [],
+        eventCharacters: {},
+        tileWidth: 32,
+        tileHeight: 32,
+        mainSheetWidth: 256,
+      },
+      32,
+      32
+    );
+    expect(drawn).toBe(2);
+    expect(ctx.fillRect).toHaveBeenCalledTimes(2);
+    expect(ctx.drawImage).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps only one event overlay when multiple events share tile', () => {
+    const map: MapData = {
+      id: 2,
+      name: 'Overlap',
+      width: 4,
+      height: 4,
+      tilesetId: 1,
+      layers: [[[0]]],
+      events: [
+        { id: 1, type: 'event', name: 'A', x: 2, y: 1 },
+        { id: 2, type: 'event', name: 'B', x: 2, y: 1 },
+        { id: 3, type: 'event', name: 'C', x: 2, y: 1 },
+      ],
+    };
+    const ctx = {
+      save: vi.fn(),
+      restore: vi.fn(),
+      drawImage: vi.fn(),
+      fillRect: vi.fn(),
+      strokeRect: vi.fn(),
+      globalAlpha: 1,
+      fillStyle: '',
+      strokeStyle: '',
+      lineWidth: 0,
+    } as unknown as CanvasRenderingContext2D;
+    const drawn = drawMapEventMarkers(
+      ctx,
+      map,
+      {
+        main: { naturalWidth: 256 } as unknown as HTMLImageElement,
+        autotiles: [],
+        eventCharacters: {},
+        tileWidth: 32,
+        tileHeight: 32,
+        mainSheetWidth: 256,
+      },
+      32,
+      32
+    );
+    expect(drawn).toBe(1);
+    expect(ctx.fillRect).toHaveBeenCalledTimes(1);
+  });
+
+  it('prefers character sprite rendering and uses direction/pattern frame', () => {
+    const map: MapData = {
+      id: 3,
+      name: 'CharacterEvent',
+      width: 3,
+      height: 3,
+      tilesetId: 1,
+      layers: [[[0]]],
+      events: [{ id: 1, type: 'event', name: 'NPC', x: 1, y: 1, characterName: 'npc001', direction: 6, pattern: 2 }],
+    };
+    const characterSheet = { naturalWidth: 128, naturalHeight: 192 } as unknown as HTMLImageElement;
+    const ctx = {
+      save: vi.fn(),
+      restore: vi.fn(),
+      drawImage: vi.fn(),
+      fillRect: vi.fn(),
+      strokeRect: vi.fn(),
+      globalAlpha: 1,
+      fillStyle: '',
+      strokeStyle: '',
+      lineWidth: 0,
+    } as unknown as CanvasRenderingContext2D;
+    const drawn = drawMapEventMarkers(
+      ctx,
+      map,
+      {
+        main: { naturalWidth: 256 } as unknown as HTMLImageElement,
+        autotiles: [],
+        eventCharacters: { npc001: characterSheet },
+        tileWidth: 32,
+        tileHeight: 32,
+        mainSheetWidth: 256,
+      },
+      32,
+      32
+    );
+    expect(drawn).toBe(1);
+    expect(ctx.drawImage).toHaveBeenCalledWith(
+      characterSheet,
+      64,
+      96,
+      32,
+      48,
+      expect.any(Number),
+      expect.any(Number),
+      expect.any(Number),
+      expect.any(Number)
+    );
+  });
+});
+
+describe('drawMapGrid', () => {
+  it('draws width+1 vertical and height+1 horizontal lines', () => {
+    const map = {
+      width: 4,
+      height: 3,
+    } as MapData;
+
+    const ctx = {
+      save: vi.fn(),
+      restore: vi.fn(),
+      beginPath: vi.fn(),
+      moveTo: vi.fn(),
+      lineTo: vi.fn(),
+      stroke: vi.fn(),
+      strokeStyle: '',
+      lineWidth: 0,
+    } as unknown as CanvasRenderingContext2D;
+
+    const lines = drawMapGrid(ctx, map, 32, 32);
+    expect(lines).toBe(9);
+    expect(ctx.stroke).toHaveBeenCalledTimes(9);
+  });
+});
+
+describe('drawSelectedTileHighlight', () => {
+  it('draws a fill and stroke for selected tile', () => {
+    const ctx = {
+      save: vi.fn(),
+      restore: vi.fn(),
+      fillRect: vi.fn(),
+      strokeRect: vi.fn(),
+      fillStyle: '',
+      strokeStyle: '',
+      lineWidth: 0,
+    } as unknown as CanvasRenderingContext2D;
+
+    drawSelectedTileHighlight(ctx, 2, 3, 32, 32);
+
+    expect(ctx.fillRect).toHaveBeenCalledWith(64, 96, 32, 32);
+    expect(ctx.strokeRect).toHaveBeenCalledWith(65, 97, 30, 30);
   });
 });

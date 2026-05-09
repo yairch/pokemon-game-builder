@@ -44,4 +44,121 @@ describe('mapReadDataToMapData', () => {
       events: [],
     });
   });
+
+  it('maps read-map events for preview markers', () => {
+    const read: MapReadData = {
+      tilesetId: 7,
+      width: 2,
+      height: 2,
+      autoplayBgm: false,
+      bgm: null,
+      autoplayBgs: false,
+      bgs: null,
+      encounterStep: 25,
+      encounterList: [],
+      layers: [
+        [
+          [1, 2],
+          [3, 4],
+        ],
+      ],
+      events: [
+        {
+          id: 12,
+          name: 'Guide NPC',
+          x: 1,
+          y: 0,
+          pages: [],
+        },
+      ],
+    };
+
+    const m = mapReadDataToMapData(42, 'Test Town', read);
+    expect(m.events).toEqual([
+      {
+        id: 12,
+        type: 'event',
+        x: 1,
+        y: 0,
+        name: 'Guide NPC',
+        graphicTileId: 0,
+        characterName: '',
+        direction: 2,
+        pattern: 0,
+      },
+    ]);
+  });
+
+  it('picks first page that has a visual graphic', () => {
+    const read: MapReadData = {
+      tilesetId: 7,
+      width: 2,
+      height: 2,
+      autoplayBgm: false,
+      bgm: null,
+      autoplayBgs: false,
+      bgs: null,
+      encounterStep: 25,
+      encounterList: [],
+      layers: [[[1, 2], [3, 4]]],
+      events: [
+        {
+          id: 13,
+          name: 'Guard',
+          x: 0,
+          y: 1,
+          pages: [
+            {
+              index: 0,
+              trigger: 0,
+              moveType: 0,
+              moveSpeed: 3,
+              moveFrequency: 3,
+              walkAnime: true,
+              stepAnime: false,
+              directionFix: false,
+              through: false,
+              alwaysOnTop: false,
+              graphic: {
+                tileId: 0,
+                characterName: '',
+                characterHue: 0,
+                direction: 2,
+                pattern: 0,
+                opacity: 255,
+                blendType: 0,
+              },
+              commands: [],
+            },
+            {
+              index: 1,
+              trigger: 0,
+              moveType: 0,
+              moveSpeed: 3,
+              moveFrequency: 3,
+              walkAnime: true,
+              stepAnime: false,
+              directionFix: false,
+              through: false,
+              alwaysOnTop: false,
+              graphic: {
+                tileId: 0,
+                characterName: 'npc001',
+                characterHue: 0,
+                direction: 2,
+                pattern: 0,
+                opacity: 255,
+                blendType: 0,
+              },
+              commands: [],
+            },
+          ],
+        },
+      ],
+    };
+    const m = mapReadDataToMapData(7, 'House', read);
+    expect(m.events[0]?.characterName).toBe('npc001');
+    expect(m.events[0]?.direction).toBe(2);
+    expect(m.events[0]?.pattern).toBe(0);
+  });
 });

@@ -5,10 +5,15 @@
 // ============================================================
 
 export interface MapEventSpec {
-  type: 'npc' | 'item';
+  id?: number;
+  type: 'npc' | 'item' | 'event';
   x: number;
   y: number;
   name: string;
+  graphicTileId?: number;
+  characterName?: string;
+  direction?: number;
+  pattern?: number;
 }
 
 export interface MapSpec {
@@ -145,6 +150,7 @@ export interface TilesetInspectorData {
   autotileImagePaths: string[];
   autotileImageUrls: string[];
   autotileImageDataUrls: string[];
+  eventCharacterImageDataUrls?: Record<string, string>;
   tileWidth: number;
   tileHeight: number;
 }
