@@ -19,7 +19,7 @@ todos:
     status: completed
   - id: pr-g0-2
     content: "PR-G0-2: Event markers on preview canvas from read-map events[] (icon/tooltip id+name); single source of truth from bridge"
-    status: pending
+    status: completed
   - id: pr-g0-3
     content: "PR-G0-3: Layer strip (L1/L2/L3/Events dimming/focus) + toggleable grid overlay (default on); aria-pressed on strip"
     status: pending
