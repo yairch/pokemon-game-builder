@@ -10,6 +10,7 @@ import {
   drawSelectedTileHighlight,
   getEventAtTile,
   mapPixelSize,
+  type LayerFocusMode,
   type MapPreviewTilesetImages,
 } from '../mapPreview/mapPreviewCanvas';
 
@@ -33,6 +34,14 @@ function loadImageFromSrc(src: string): Promise<HTMLImageElement> {
   });
 }
 
+const LAYER_FOCUS_OPTIONS: Array<{ mode: LayerFocusMode; label: string; title: string }> = [
+  { mode: 'all', label: 'All', title: 'Show all tile layers and events' },
+  { mode: 'l1', label: 'L1', title: 'Focus ground layer (L1)' },
+  { mode: 'l2', label: 'L2', title: 'Focus object layer (L2)' },
+  { mode: 'l3', label: 'L3', title: 'Focus overlay layer (L3)' },
+  { mode: 'events', label: 'Events', title: 'Focus events (dim tiles, emphasize events)' },
+];
+
 const MapPreview: React.FC<MapPreviewProps> = ({
   mapData,
   projectPath,
@@ -48,6 +57,7 @@ const MapPreview: React.FC<MapPreviewProps> = ({
   const [images, setImages] = useState<MapPreviewTilesetImages | null>(null);
   const [zoom, setZoom] = useState(1);
   const [showGrid, setShowGrid] = useState(true);
+  const [layerFocusMode, setLayerFocusMode] = useState<LayerFocusMode>('all');
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [hoverTile, setHoverTile] = useState<{ x: number; y: number } | null>(null);
   const [selectedTile, setSelectedTile] = useState<{ x: number; y: number } | null>(null);
@@ -142,13 +152,22 @@ const MapPreview: React.FC<MapPreviewProps> = ({
     if (!ctx) return;
     ctx.imageSmoothingEnabled = false;
     ctx.clearRect(0, 0, w, h);
-    drawMapPreviewLayers(ctx, { map: mapData, images });
+    const eventsMode = layerFocusMode === 'events';
+    drawMapPreviewLayers(ctx, {
+      map: mapData,
+      images,
+      focusMode: layerFocusMode,
+      dimOpacity: eventsMode ? 0.3 : 0.28,
+    });
     if (showGrid) drawMapGrid(ctx, mapData, images.tileWidth, images.tileHeight);
     if (selectedTile) {
       drawSelectedTileHighlight(ctx, selectedTile.x, selectedTile.y, images.tileWidth, images.tileHeight);
     }
-    drawMapEventMarkers(ctx, mapData, images, images.tileWidth, images.tileHeight);
-  }, [mapData, images, selectedTile, showGrid]);
+    drawMapEventMarkers(ctx, mapData, images, images.tileWidth, images.tileHeight, {
+      emphasized: eventsMode,
+      markerOpacity: layerFocusMode === 'all' || eventsMode ? 1 : 0.42,
+    });
+  }, [layerFocusMode, mapData, images, selectedTile, showGrid]);
 
   const pointerToTile = useCallback(
     (clientX: number, clientY: number): { x: number; y: number } | null => {
@@ -287,6 +306,29 @@ const MapPreview: React.FC<MapPreviewProps> = ({
           </div>
         )}
       </div>
+      {mapData && (
+        <div className="mb-3 flex flex-wrap items-center gap-1 rounded-lg border border-zinc-200/90 bg-zinc-50/80 p-1">
+          {LAYER_FOCUS_OPTIONS.map((option) => {
+            const active = layerFocusMode === option.mode;
+            return (
+              <button
+                key={option.mode}
+                type="button"
+                onClick={() => setLayerFocusMode(option.mode)}
+                aria-pressed={active}
+                title={option.title}
+                className={`inline-flex h-7 items-center justify-center rounded-md border px-2.5 text-[11px] font-medium tracking-wide transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/50 ${
+                  active
+                    ? 'border-blue-300 bg-blue-100/80 text-blue-700'
+                    : 'border-transparent text-zinc-600 hover:bg-white hover:text-zinc-900'
+                }`}
+              >
+                {option.label}
+              </button>
+            );
+          })}
+        </div>
+      )}
 
       {!projectPath && (
         <div className="flex h-[200px] items-center justify-center rounded-lg border border-dashed border-zinc-200 bg-zinc-50/70 px-4 text-center">
@@ -331,6 +373,10 @@ const MapPreview: React.FC<MapPreviewProps> = ({
             <span className="mx-2 text-zinc-300">·</span>
             <span className="text-zinc-500">
               {mapData.width}×{mapData.height} tiles
+            </span>
+            <span className="mx-2 text-zinc-300">·</span>
+            <span className="text-[11px] font-semibold uppercase tracking-wide text-zinc-500">
+              {layerFocusMode === 'all' ? 'All layers' : layerFocusMode === 'events' ? 'Events focus' : `Focus ${layerFocusMode.toUpperCase()}`}
             </span>
             {hoverTile && (
               <>

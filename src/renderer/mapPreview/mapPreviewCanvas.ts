@@ -36,6 +36,18 @@ export interface MapPreviewTilesetImages {
 export interface DrawMapPreviewOptions {
   map: MapData;
   images: MapPreviewTilesetImages;
+  focusMode?: LayerFocusMode;
+  /** Opacity for non-focused tile layers (0..1). */
+  dimOpacity?: number;
+}
+
+export type LayerFocusMode = 'all' | 'l1' | 'l2' | 'l3' | 'events';
+
+function tileLayerOpacity(layerIndex: number, focusMode: LayerFocusMode, dimOpacity: number): number {
+  if (focusMode === 'all') return 1;
+  if (focusMode === 'events') return dimOpacity;
+  const focusedLayerIndex = focusMode === 'l1' ? 0 : focusMode === 'l2' ? 1 : 2;
+  return layerIndex === focusedLayerIndex ? 1 : dimOpacity;
 }
 
 /**
@@ -44,14 +56,19 @@ export interface DrawMapPreviewOptions {
  */
 export function drawMapPreviewLayers(
   ctx: CanvasRenderingContext2D,
-  { map, images }: DrawMapPreviewOptions
+  { map, images, focusMode = 'all', dimOpacity = 0.28 }: DrawMapPreviewOptions
 ): number {
+  const normalizedDimOpacity = Math.max(0, Math.min(1, dimOpacity));
   const { tileWidth: tw, tileHeight: th, main, autotiles, mainSheetWidth } = images;
   let draws = 0;
   const layers = map.layers ?? [];
   for (let zi = 0; zi < layers.length; zi += 1) {
     const layer = layers[zi];
     if (!layer) continue;
+    const layerOpacity = tileLayerOpacity(zi, focusMode, normalizedDimOpacity);
+    if (layerOpacity <= 0) continue;
+    ctx.save();
+    ctx.globalAlpha = layerOpacity;
     for (let y = 0; y < map.height; y += 1) {
       const row = layer[y];
       if (!row) continue;
@@ -74,6 +91,7 @@ export function drawMapPreviewLayers(
         }
       }
     }
+    ctx.restore();
   }
   return draws;
 }
@@ -155,9 +173,17 @@ export function drawMapEventMarkers(
   map: MapData,
   images: MapPreviewTilesetImages,
   tileW: number,
-  tileH: number
+  tileH: number,
+  options?: {
+    emphasized?: boolean;
+    markerOpacity?: number;
+  }
 ): number {
   if (!map.events?.length) return 0;
+  const emphasized = options?.emphasized ?? false;
+  const markerOpacity = Math.max(0, Math.min(1, options?.markerOpacity ?? 1));
+  const spriteOpacity = Math.max(0, Math.min(1, markerOpacity * 0.95));
+  if (markerOpacity <= 0) return 0;
   const eventsByTile = new Map<string, MapEventSpec>();
   for (const event of map.events) {
     if (event.x < 0 || event.y < 0 || event.x >= map.width || event.y >= map.height) continue;
@@ -169,6 +195,7 @@ export function drawMapEventMarkers(
   const overlayInset = Math.max(3, Math.floor(Math.min(tileW, tileH) * 0.12));
   let rendered = 0;
   ctx.save();
+  ctx.globalAlpha = markerOpacity;
   for (const event of eventsByTile.values()) {
     const baseX = event.x * tileW;
     const baseY = event.y * tileH;
@@ -177,9 +204,15 @@ export function drawMapEventMarkers(
     const ow = Math.max(2, tileW - overlayInset * 2);
     const oh = Math.max(2, tileH - overlayInset * 2);
 
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.18)';
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.98)';
-    ctx.lineWidth = 2;
+    if (emphasized) {
+      ctx.fillStyle = 'rgba(236, 72, 153, 0.35)';
+      ctx.strokeStyle = 'rgba(236, 72, 153, 0.98)';
+      ctx.lineWidth = 2.5;
+    } else {
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.18)';
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.98)';
+      ctx.lineWidth = 2;
+    }
     ctx.fillRect(ox, oy, ow, oh);
     ctx.strokeRect(ox + 0.5, oy + 0.5, Math.max(0, ow - 1), Math.max(0, oh - 1));
 
@@ -207,7 +240,7 @@ export function drawMapEventMarkers(
         const dx = ox + (ow - dw) / 2;
         const dy = oy + (oh - dh);
         ctx.save();
-        ctx.globalAlpha = 0.95;
+        ctx.globalAlpha = spriteOpacity;
         ctx.drawImage(characterSheet, sx, sy, fw, fh, dx, dy, dw, dh);
         ctx.restore();
       }
@@ -217,7 +250,7 @@ export function drawMapEventMarkers(
         const rect = regularTileSourceRect(graphicTileId, tileW, tileH, images.mainSheetWidth);
         if (rect) {
           ctx.save();
-          ctx.globalAlpha = 0.95;
+          ctx.globalAlpha = spriteOpacity;
           ctx.drawImage(images.main, rect.sx, rect.sy, rect.sw, rect.sh, ox, oy, ow, oh);
           ctx.restore();
         }
