@@ -16,7 +16,7 @@ todos:
     status: completed
   - id: pr-g0-1
     content: "PR-G0-1: Maps tree + preview from read-map selection; refresh tree after generate + auto-select new map; Tileset Inspector trigger for previewed map (see gui_editor_mvp_roadmap G0)"
-    status: pending
+    status: completed
   - id: pr-g0-2
     content: "PR-G0-2: Event markers on preview canvas from read-map events[] (icon/tooltip id+name); single source of truth from bridge"
     status: pending
