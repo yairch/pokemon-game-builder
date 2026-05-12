@@ -3,6 +3,7 @@ import ProjectSelector from './components/ProjectSelector';
 import ChatInterface from './components/ChatInterface';
 import MapPreview from './components/MapPreview';
 import MapsTree from './components/MapsTree';
+import { SplitPane } from './components/workbench/SplitPane';
 import { bridge } from './services/bridge';
 import type { MapData, MapInfosReadData } from '../shared/types';
 import { buildMapInfosTree, getDefaultPreviewMapId } from '../shared/mapInfosTree';
@@ -243,16 +244,17 @@ const App: React.FC = () => {
     !mapInfosLoading;
 
   return (
-    <div className="h-screen bg-zinc-100/90 p-6 flex flex-col overflow-hidden select-text">
-      <header className="mb-5 flex-shrink-0">
-        <h1 className="text-2xl font-bold tracking-tight text-zinc-900 sm:text-3xl">
-          Pokemon <span className="text-blue-600">Game Builder</span>
-        </h1>
-        <p className="mt-1 text-sm text-zinc-500">AI companion for Pokémon Essentials & RPG Maker XP</p>
-      </header>
-
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 flex-1 overflow-hidden">
-        <div className="lg:col-span-4 space-y-5 overflow-y-auto pr-2 custom-scrollbar">
+    <div className="flex h-screen flex-col overflow-hidden bg-zinc-100/90 select-text">
+      <header className="sticky top-0 z-50 flex-shrink-0 border-b border-zinc-200/80 bg-white/95 px-4 py-2.5 shadow-sm backdrop-blur supports-[backdrop-filter]:bg-white/85">
+        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-4 gap-y-2">
+          <div className="min-w-0 flex-1">
+            <h1 className="truncate text-lg font-bold tracking-tight text-zinc-900">
+              Pokémon <span className="text-blue-600">Game Builder</span>
+            </h1>
+            <p className="truncate font-mono text-[11px] text-zinc-500" title={projectPath ?? undefined}>
+              {projectPath ?? 'No project loaded'}
+            </p>
+          </div>
           <ProjectSelector
             currentPath={projectPath}
             onProjectSelect={setProjectPath}
@@ -268,45 +270,67 @@ const App: React.FC = () => {
             tilesetInspectFromPreview={inspectFromPreview}
             onTilesetInspectFromPreviewClosed={() => setInspectFromPreview(null)}
           />
-          {projectPath && (
-            <MapsTree
-              roots={mapTreeRoots}
-              selectedMapId={previewMapId}
-              onSelectMap={setPreviewMapId}
-              loading={treeBusy}
-              resetKey={projectPath}
-            />
-          )}
-          <MapPreview
-            mapData={previewMap}
-            projectPath={projectPath}
-            previewLoading={previewLoading}
-            previewLoadError={previewError}
-            noMapsInProject={noMapsWhenReady}
-            onInspectTileset={requestPreviewTilesetInspect}
-          />
-
-          <div className="rounded-xl border border-zinc-200/90 bg-white p-4 shadow-sm ring-1 ring-black/[0.03]">
-            <h2 className="text-xs font-semibold uppercase tracking-wide text-zinc-500">Quick tips</h2>
-            <ul className="mt-2 space-y-2 pl-4 text-[13px] leading-relaxed text-zinc-600 list-disc marker:text-zinc-300">
-              <li>Select your Pokémon Essentials project folder.</li>
-              <li>Use chat to create maps, events, or scripts.</li>
-              <li>Changes write to your project on disk.</li>
-              <li>Open RPG Maker XP for full editing when needed.</li>
-            </ul>
-          </div>
         </div>
+      </header>
 
-        <div className="lg:col-span-8 flex min-h-0 flex-col overflow-hidden">
-          <ChatInterface
-            messages={messages}
-            onSendMessage={handleSendMessage}
-            onGenerateMap={handleGenerateMap}
-            isLoading={isLoading}
-            hasApiKey={hasApiKey}
-          />
-        </div>
-      </div>
+      <main className="flex min-h-0 flex-1 flex-col px-3 pb-3 pt-2">
+        <SplitPane
+          orientation="horizontal"
+          storageKey="gw-workbench-chat"
+          defaultRatio={0.56}
+          minPrimaryPx={280}
+          minSecondaryPx={260}
+          primary={
+            <div className="flex min-h-0 min-w-0 flex-1 px-0.5">
+              <SplitPane
+                orientation="vertical"
+                storageKey="gw-tree-preview"
+                defaultRatio={0.34}
+                minPrimaryPx={140}
+                minSecondaryPx={200}
+                primary={
+                  projectPath ? (
+                    <MapsTree
+                      roots={mapTreeRoots}
+                      selectedMapId={previewMapId}
+                      onSelectMap={setPreviewMapId}
+                      loading={treeBusy}
+                      resetKey={projectPath}
+                      fillWorkbench
+                    />
+                  ) : (
+                    <div className="flex min-h-[120px] flex-1 items-center justify-center rounded-xl border border-dashed border-zinc-300 bg-white/80 px-4 text-center text-[13px] text-zinc-500">
+                      Open a project to browse maps.
+                    </div>
+                  )
+                }
+                secondary={
+                  <MapPreview
+                    mapData={previewMap}
+                    projectPath={projectPath}
+                    previewLoading={previewLoading}
+                    previewLoadError={previewError}
+                    noMapsInProject={noMapsWhenReady}
+                    onInspectTileset={requestPreviewTilesetInspect}
+                    fillWorkbench
+                  />
+                }
+              />
+            </div>
+          }
+          secondary={
+            <div className="flex min-h-0 min-w-0 flex-1 flex-col pl-2">
+              <ChatInterface
+                messages={messages}
+                onSendMessage={handleSendMessage}
+                onGenerateMap={handleGenerateMap}
+                isLoading={isLoading}
+                hasApiKey={hasApiKey}
+              />
+            </div>
+          }
+        />
+      </main>
     </div>
   );
 };

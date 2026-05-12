@@ -9,6 +9,8 @@ interface MapsTreeProps {
   loading?: boolean;
   /** Changes when the project changes — resets expansion to “all folders open”. */
   resetKey: string;
+  /** Fill a vertical split in the workbench (scroll inside pane). */
+  fillWorkbench?: boolean;
 }
 
 function collectFolderIds(nodes: MapInfosTreeNode[]): number[] {
@@ -145,6 +147,7 @@ const MapsTree: React.FC<MapsTreeProps> = ({
   onSelectMap,
   loading,
   resetKey,
+  fillWorkbench = false,
 }) => {
   const [expandedIds, setExpandedIds] = useState<Set<number>>(() => new Set());
 
@@ -175,8 +178,10 @@ const MapsTree: React.FC<MapsTreeProps> = ({
   };
 
   return (
-    <section className="rounded-xl border border-zinc-200/90 bg-white p-4 shadow-sm ring-1 ring-black/[0.03]">
-      <div className="mb-3 flex items-start justify-between gap-3">
+    <section
+      className={`rounded-xl border border-zinc-200/90 bg-white p-4 shadow-sm ring-1 ring-black/[0.03] ${fillWorkbench ? 'flex min-h-0 flex-1 flex-col' : ''}`}
+    >
+      <div className="mb-3 flex shrink-0 items-start justify-between gap-3">
         <div>
           <h2 className="text-xs font-semibold uppercase tracking-wide text-zinc-500">Map browser</h2>
           <p className="mt-1 text-[13px] leading-snug text-zinc-600">
@@ -185,8 +190,12 @@ const MapsTree: React.FC<MapsTreeProps> = ({
         </div>
       </div>
 
-      <div className="overflow-hidden rounded-lg border border-zinc-200/80 bg-zinc-50/50">
-        <div className="max-h-72 overflow-y-auto custom-scrollbar px-1 py-1.5">
+      <div
+        className={`overflow-hidden rounded-lg border border-zinc-200/80 bg-zinc-50/50 ${fillWorkbench ? 'flex min-h-0 flex-1 flex-col' : ''}`}
+      >
+        <div
+          className={`custom-scrollbar px-1 py-1.5 ${fillWorkbench ? 'min-h-0 flex-1 overflow-y-auto' : 'max-h-72 overflow-y-auto'}`}
+        >
           {loading && (
             <div className="flex items-center gap-2 px-3 py-8 text-sm text-zinc-500" role="status">
               <Loader2 className="h-4 w-4 shrink-0 animate-spin text-zinc-400" aria-hidden />

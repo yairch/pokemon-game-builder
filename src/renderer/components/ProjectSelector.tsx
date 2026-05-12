@@ -1,9 +1,18 @@
-import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import { FolderOpen, PlusCircle, CheckCircle, Key } from 'lucide-react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import { HelpCircle } from 'lucide-react';
 import { bridge } from '../services/bridge';
 import { MapInfoData, MapInfosReadData, TilesetInspectorData } from '../../shared/types';
+import { HeaderPopover } from './workbench/HeaderPopover';
+import { WorkbenchProjectPanel } from './workbench/panels/WorkbenchProjectPanel';
+import { WorkbenchAiPanel } from './workbench/panels/WorkbenchAiPanel';
+import type { WorkbenchAIProvider } from './workbench/panels/WorkbenchAiPanel';
+import { WorkbenchTemplatePanel } from './workbench/panels/WorkbenchTemplatePanel';
+import { WorkbenchHelpPanel } from './workbench/panels/WorkbenchHelpPanel';
+import { ConnectionResultModal } from './workbench/modals/ConnectionResultModal';
+import { WorkbenchTilesetInspectorModal } from './workbench/modals/WorkbenchTilesetInspectorModal';
 
-type AIProvider = 'claude' | 'gemini';
+type AIProvider = WorkbenchAIProvider;
+type WorkbenchHeaderPanel = 'project' | 'ai' | 'template' | 'tests' | 'help';
 
 interface ProjectSelectorProps {
   onProjectSelect: (path: string) => void;
@@ -55,10 +64,13 @@ const ProjectSelector: React.FC<ProjectSelectorProps> = ({
       .map((info) => ({ id: info.id, name: info.name }))
       .sort((a, b) => a.id - b.id);
   }, [mapInfos]);
-  const tilesetCanvasRef = useRef<HTMLCanvasElement>(null);
-  const tilesetImageRef = useRef<HTMLImageElement>(null);
   const [mapTestRunning, setMapTestRunning] = useState(false);
   const [mapTestResult, setMapTestResult] = useState<{ success: boolean; message: string } | null>(null);
+  const [headerPanel, setHeaderPanel] = useState<WorkbenchHeaderPanel | null>(null);
+
+  const openHeaderPanel = (panel: WorkbenchHeaderPanel, open: boolean) => {
+    setHeaderPanel(open ? panel : null);
+  };
 
   useEffect(() => {
     const fetchProvider = async () => {
@@ -102,54 +114,6 @@ const ProjectSelector: React.FC<ProjectSelectorProps> = ({
   }, [hasApiKey, keyVersion, currentProvider]);
 
   useEffect(() => {
-    if (!tilesetInspector) return;
-
-    const img = tilesetImageRef.current;
-    const canvas = tilesetCanvasRef.current;
-    if (!img || !canvas) return;
-
-    const handleDraw = () => {
-      const tileSize = tilesetInspector.tileWidth;
-      canvas.width = img.naturalWidth;
-      canvas.height = img.naturalHeight;
-
-      const ctx = canvas.getContext('2d');
-      if (!ctx) return;
-
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-      ctx.drawImage(img, 0, 0);
-
-      ctx.font = '10px monospace';
-      ctx.textAlign = 'left';
-      ctx.textBaseline = 'top';
-
-      const cols = Math.floor(img.naturalWidth / tileSize);
-      const rows = Math.floor(img.naturalHeight / tileSize);
-
-      let tileId = 384;
-      for (let y = 0; y < rows; y += 1) {
-        for (let x = 0; x < cols; x += 1) {
-          const px = x * tileSize;
-          const py = y * tileSize;
-
-          ctx.fillStyle = 'rgba(0,0,0,0.6)';
-          ctx.fillRect(px, py, 26, 12);
-          ctx.fillStyle = '#ffffff';
-          ctx.fillText(String(tileId), px + 2, py + 1);
-
-          tileId += 1;
-        }
-      }
-    };
-
-    if (img.complete) {
-      handleDraw();
-    } else {
-      img.onload = handleDraw;
-    }
-  }, [tilesetInspector]);
-
-  useEffect(() => {
     if (!currentPath) return;
     if (mapInfos && mapList.length > 0 && selectedTemplateMapId === null) {
       onTemplateMapChange(mapList[0].id);
@@ -157,27 +121,25 @@ const ProjectSelector: React.FC<ProjectSelectorProps> = ({
   }, [currentPath, mapInfos, mapList, selectedTemplateMapId, onTemplateMapChange]);
 
   const handleProviderChange = async (provider: AIProvider) => {
-    if (provider === currentProvider) return; // Already on this provider
-    
+    if (provider === currentProvider) return;
+
     try {
-      console.log(`Switching to ${provider}...`);
       const result = await bridge.invoke('set-ai-provider', provider === 'claude');
-      console.log('Provider switch result:', result);
       if (result && result.provider) {
         setCurrentProvider(result.provider);
-        setSelectedModel(''); // Reset model selection
+        setSelectedModel('');
         setAvailableModels([]);
         setModelStatus('idle');
-        // Notify parent to re-check API key for new provider
         if (onProviderChange) {
           await onProviderChange();
         }
-      } else {
-        console.error('Invalid provider switch result:', result);
       }
     } catch (e) {
       console.error('Failed to set provider:', e);
-      setTestResult({ success: false, message: `Failed to switch provider: ${e instanceof Error ? e.message : String(e)}` });
+      setTestResult({
+        success: false,
+        message: `Failed to switch provider: ${e instanceof Error ? e.message : String(e)}`,
+      });
     }
   };
 
@@ -205,7 +167,7 @@ const ProjectSelector: React.FC<ProjectSelectorProps> = ({
     }
   };
 
-  const isBrowserMode = !window.electron;
+  const isBrowserMode = !(window as unknown as { electron?: { invoke: unknown } }).electron;
 
   const handleSelectExisting = async () => {
     if (isBrowserMode) {
@@ -315,7 +277,7 @@ const ProjectSelector: React.FC<ProjectSelectorProps> = ({
         projectPath: currentPath,
         mapName: selectedMap?.name ?? `Map${selectedTemplateMapId}`,
         mapId: selectedTemplateMapId,
-        testType
+        testType,
       });
       if (result.success) {
         let debug = '';
@@ -332,7 +294,10 @@ const ProjectSelector: React.FC<ProjectSelectorProps> = ({
         const sourceInfo = result.sourceMapId
           ? ` source:${result.sourceMapId} (${result.sourceMapName || 'unknown'})`
           : '';
-        setMapTestResult({ success: true, message: `Created Map${String(result.mapId).padStart(3, '0')} (${result.mapData.name}).${debug}${sourceInfo}` });
+        setMapTestResult({
+          success: true,
+          message: `Created Map${String(result.mapId).padStart(3, '0')} (${result.mapData.name}).${debug}${sourceInfo}`,
+        });
         if (onMapRegistryChanged) await Promise.resolve(onMapRegistryChanged(result.mapId));
       } else {
         setMapTestResult({ success: false, message: result.error || 'Test failed.' });
@@ -356,7 +321,7 @@ const ProjectSelector: React.FC<ProjectSelectorProps> = ({
       buttonHover: 'hover:bg-purple-700',
       linkUrl: 'https://console.anthropic.com/',
       linkText: 'Anthropic Console',
-      defaultModel: 'claude-3-5-sonnet-20241022'
+      defaultModel: 'claude-3-5-sonnet-20241022',
     },
     gemini: {
       name: 'Gemini',
@@ -369,352 +334,169 @@ const ProjectSelector: React.FC<ProjectSelectorProps> = ({
       buttonHover: 'hover:bg-blue-700',
       linkUrl: 'https://aistudio.google.com/',
       linkText: 'Google AI Studio',
-      defaultModel: 'gemini-2.5-flash'
-    }
+      defaultModel: 'gemini-2.5-flash',
+    },
   };
 
   const info = providerInfo[currentProvider];
 
+  const saveApiKeyFromToolbar = async () => {
+    try {
+      const success = await bridge.invoke('set-api-key', { apiKey: localApiKey, provider: currentProvider });
+      if (success) {
+        onSaveApiKey(localApiKey);
+        setLocalApiKey('');
+        if (onProviderChange) {
+          onProviderChange();
+        }
+      }
+    } catch (e: any) {
+      console.error('Failed to save API key:', e);
+      setTestResult({ success: false, message: `Failed to save API key: ${e.message}` });
+    }
+  };
+
   return (
-    <section className="mb-0 rounded-xl border border-zinc-200/90 bg-white p-5 shadow-sm ring-1 ring-black/[0.03]">
-      <h2 className="mb-5 text-xs font-semibold uppercase tracking-wide text-zinc-500">Configuration</h2>
-      
-      {/* Provider Selection */}
-      <div className="mb-4 p-3 bg-gray-50 rounded-lg border border-gray-100">
-        <label className="text-sm font-medium text-gray-700 mb-2 block">
-          AI Provider
-        </label>
-        <div className="flex gap-2">
-          <button
-            onClick={() => handleProviderChange('claude')}
-            className={`flex-1 px-3 py-2 rounded text-sm font-medium transition ${
-              currentProvider === 'claude'
-                ? 'bg-purple-600 text-white'
-                : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-50'
-            }`}
-          >
-            Claude
-          </button>
-          <button
-            onClick={() => handleProviderChange('gemini')}
-            className={`flex-1 px-3 py-2 rounded text-sm font-medium transition ${
-              currentProvider === 'gemini'
-                ? 'bg-blue-600 text-white'
-                : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-50'
-            }`}
-          >
-            Gemini
-          </button>
-        </div>
-      </div>
-
-      {/* API Key Input */}
-      <div className={`mb-6 p-3 ${info.bgColor} rounded-lg border ${info.borderColor}`}>
-        <h3 className={`text-sm font-medium ${info.textColor} flex items-center mb-2`}>
-          <Key size={14} className="mr-1" />
-          {info.name} API Key
-        </h3>
-        <div className="flex space-x-2">
-          <input
-            type="password"
-            value={localApiKey}
-            onChange={(e) => setLocalApiKey(e.target.value)}
-            placeholder={`Enter your ${info.name} API Key...`}
-            className={`flex-1 px-3 py-1.5 text-sm border ${info.inputBorder} rounded focus:outline-none focus:ring-1 ${currentProvider === 'claude' ? 'focus:ring-purple-500' : 'focus:ring-blue-500'} text-gray-900 bg-white relative z-10 cursor-text`}
+    <>
+      <div className="flex flex-wrap items-center justify-end gap-1.5">
+        <HeaderPopover
+          label="Project"
+          isOpen={headerPanel === 'project'}
+          onOpenChange={(o) => openHeaderPanel('project', o)}
+          panelMaxWidthPx={420}
+        >
+          <WorkbenchProjectPanel
+            currentPath={currentPath}
+            newProjectPath={newProjectPath}
+            isInitializing={isInitializing}
+            onSelectExisting={() => void handleSelectExisting()}
+            onSelectNewDestination={() => void handleSelectNewDestination()}
+            onInit={() => void handleInit()}
           />
-          <button
-            onClick={async () => {
-              try {
-                const success = await bridge.invoke('set-api-key', { apiKey: localApiKey, provider: currentProvider });
-                if (success) {
-                  onSaveApiKey(localApiKey);
-                  setLocalApiKey('');
-                  // Trigger provider change callback to refresh API key status
-                  if (onProviderChange) {
-                    onProviderChange();
-                  }
-                }
-              } catch (e: any) {
-                console.error('Failed to save API key:', e);
-                setTestResult({ success: false, message: `Failed to save API key: ${e.message}` });
-              }
-            }}
-            disabled={!localApiKey.trim()}
-            className={`px-3 py-1.5 ${info.buttonBg} text-white text-sm rounded ${info.buttonHover} transition disabled:opacity-50 disabled:cursor-not-allowed`}
-          >
-            Save
-          </button>
-        </div>
-        <p className={`mt-2 text-[10px] ${info.textColor} flex justify-between items-center`}>
-          <span>
-            Required for AI chat. Get one at{' '}
-            <button 
-              onClick={() => bridge.invoke('open-external-url', info.linkUrl)}
-              className="underline hover:opacity-80 bg-transparent border-none p-0 cursor-pointer"
-            >
-              {info.linkText}
-            </button>.
-          </span>
-          {hasApiKey && <span className="text-green-600 font-bold ml-2">✓ Configured</span>}
-        </p>
+        </HeaderPopover>
 
-        {hasApiKey && (
-          <div className="mt-4 pt-4 border-t border-opacity-20" style={{ borderColor: `var(--${info.color}-200)` }}>
-            <div className="flex justify-between items-center mb-1.5">
-              <label className={`text-[10px] font-medium ${info.textColor}`}>
-                Active {info.name} Model
-              </label>
-              <div className="flex gap-2">
-                {modelStatus === 'success' && (
-                  <button
-                    onClick={handleTestModel}
-                    className={`text-[10px] ${info.textColor} hover:opacity-80 underline`}
-                  >
-                    {isTestingModel ? 'Testing...' : 'Test'}
-                  </button>
-                )}
-                <button
-                  onClick={() => bridge.invoke('open-external-url', currentProvider === 'claude' ? 'https://docs.anthropic.com/claude/reference/rate-limits' : 'https://ai.dev/rate-limit')}
-                  className="text-[10px] text-gray-500 hover:text-gray-700 underline"
-                >
-                  Quota
-                </button>
-              </div>
-            </div>
-            
-            {modelStatus === 'loading' && (
-              <div className={`text-[10px] ${info.textColor} opacity-60 animate-pulse italic`}>
-                Scanning models...
-              </div>
-            )}
-            
-            {modelStatus === 'error' && (
-              <div className="text-[10px] text-red-500 italic break-words">
-                Failed to load models: {errorMessage}
-              </div>
-            )}
-            
-            {modelStatus === 'success' && availableModels.length > 0 ? (
-              <div className="space-y-2">
-                <select
-                  value={selectedModel}
-                  onChange={handleModelChange}
-                  className={`w-full px-2 py-1.5 text-xs border ${info.inputBorder} rounded bg-white text-gray-700 focus:outline-none focus:ring-1 ${currentProvider === 'claude' ? 'focus:ring-purple-500' : 'focus:ring-blue-500'}`}
-                >
-                  {availableModels.map(model => (
-                    <option key={model} value={model}>
-                      {model}
-                    </option>
-                  ))}
-                </select>
-                
-                {testResult && (
-                  <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[9999] p-4">
-                    <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full p-6 flex flex-col max-h-[80vh]">
-                      <div className="flex justify-between items-center mb-4">
-                        <h3 className={`text-lg font-bold ${testResult.success ? 'text-green-600' : 'text-red-600'}`}>
-                          {testResult.success ? 'Success' : 'Connection Error'}
-                        </h3>
-                        <button onClick={() => setTestResult(null)} className="text-gray-400 hover:text-gray-600">✕</button>
-                      </div>
-                      <div className="flex-1 overflow-y-auto bg-gray-50 p-4 rounded border border-gray-200 text-xs font-mono break-all whitespace-pre-wrap select-text cursor-text leading-relaxed">
-                        {testResult.message}
-                      </div>
-                      <button 
-                        onClick={() => setTestResult(null)}
-                        className="mt-4 w-full py-2 bg-gray-800 text-white rounded hover:bg-black transition"
-                      >
-                        Close
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </div>
-            ) : modelStatus === 'success' && (
-              <div className="text-[10px] text-gray-500 italic">
-                No models found.
-              </div>
-            )}
-          </div>
-        )}
-      </div>
+        <HeaderPopover
+          label="AI"
+          isOpen={headerPanel === 'ai'}
+          onOpenChange={(o) => openHeaderPanel('ai', o)}
+        >
+          <WorkbenchAiPanel
+            currentProvider={currentProvider}
+            onSelectProvider={(p) => void handleProviderChange(p)}
+            info={info}
+            localApiKey={localApiKey}
+            onLocalApiKeyChange={setLocalApiKey}
+            onSaveApiKeyClick={() => void saveApiKeyFromToolbar()}
+            saveDisabled={!localApiKey.trim()}
+            hasApiKey={hasApiKey}
+            openVendorLink={() => void bridge.invoke('open-external-url', info.linkUrl)}
+            modelStatus={modelStatus}
+            errorMessage={errorMessage}
+            availableModels={availableModels}
+            selectedModel={selectedModel}
+            onModelChange={(e) => void handleModelChange(e)}
+            onPingModel={() => void handleTestModel()}
+            isTestingModel={isTestingModel}
+            openQuotaLink={() =>
+              void bridge.invoke(
+                'open-external-url',
+                currentProvider === 'claude'
+                  ? 'https://docs.anthropic.com/claude/reference/rate-limits'
+                  : 'https://ai.dev/rate-limit'
+              )
+            }
+          />
+        </HeaderPopover>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <div className="space-y-3">
-          <h3 className="text-sm font-medium text-gray-700 uppercase tracking-wider">Open Existing</h3>
-          <button
-            onClick={handleSelectExisting}
-            className="w-full flex items-center justify-center px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition"
-          >
-            <FolderOpen size={18} className="mr-2" />
-            {currentPath ? 'Change Project' : 'Select Project'}
-          </button>
-          <div className="text-xs text-gray-500 truncate bg-gray-50 p-2 rounded border border-gray-100">
-            {currentPath || 'No project selected'}
-          </div>
-        </div>
+        <HeaderPopover
+          label="Template"
+          isOpen={headerPanel === 'template'}
+          onOpenChange={(o) => openHeaderPanel('template', o)}
+          disabled={!currentPath}
+          panelMaxWidthPx={440}
+        >
+          <WorkbenchTemplatePanel
+            currentPath={currentPath}
+            mapListLoading={mapListLoading}
+            mapList={mapList}
+            selectedTemplateMapId={selectedTemplateMapId}
+            onTemplateMapChange={onTemplateMapChange}
+            tilesetInspectorLoading={tilesetInspectorLoading}
+            tilesetInspectorError={tilesetInspectorError}
+            onOpenTilesetInspector={() => void handleOpenTilesetInspector()}
+          />
+        </HeaderPopover>
 
-        <div className="space-y-3 border-l pl-6 border-gray-100">
-          <h3 className="text-sm font-medium text-gray-700 uppercase tracking-wider">Create New</h3>
-          <div className="flex flex-col space-y-2">
+        <HeaderPopover
+          label="Tests ▾"
+          isOpen={headerPanel === 'tests'}
+          onOpenChange={(o) => openHeaderPanel('tests', o)}
+          accentWhenOpen
+          align="right"
+          panelMaxWidthPx={340}
+        >
+          <p className="mb-4 text-[12px] leading-snug text-gray-600">
+            Runs use the template map from the Template menu.
+          </p>
+          <div className="flex flex-col gap-2">
             <button
-              onClick={handleSelectNewDestination}
-              className="w-full flex items-center justify-center px-4 py-2 bg-gray-100 text-gray-700 rounded hover:bg-gray-200 transition"
+              type="button"
+              title="Quick sanity test (no AI)"
+              onClick={() => void handleRunMapTest('sanity')}
+              disabled={mapTestRunning || !selectedTemplateMapId || !currentPath}
+              className="rounded-lg bg-slate-700 px-3 py-2.5 text-xs font-medium text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
             >
-              <PlusCircle size={18} className="mr-2" />
-              {newProjectPath ? 'Change Destination' : 'Select Destination'}
-            </button>
-            <div className="text-xs text-gray-500 truncate bg-gray-50 p-2 rounded border border-gray-100 min-h-[32px]">
-              {newProjectPath || 'No destination'}
-            </div>
-            <button
-              onClick={handleInit}
-              disabled={!newProjectPath || isInitializing}
-              className={`w-full flex items-center justify-center px-4 py-2 text-white rounded transition ${
-                !newProjectPath || isInitializing ? 'bg-gray-300 cursor-not-allowed' : 'bg-green-600 hover:bg-green-700'
-              }`}
-            >
-              {isInitializing ? 'Initializing...' : 'Init New Project'}
-            </button>
-          </div>
-        </div>
-      </div>
-
-      <div className="mt-6 pt-4 border-t border-gray-200">
-        <h3 className="text-sm font-medium text-gray-700 uppercase tracking-wider mb-2">Template Map</h3>
-        <div className="flex gap-2">
-          <select
-            value={selectedTemplateMapId ?? ''}
-            onChange={(e) => {
-              const val = e.target.value;
-              onTemplateMapChange(val === '' ? null : Number(val));
-            }}
-            disabled={!currentPath || mapListLoading}
-            className="flex-1 px-3 py-2 text-xs border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 bg-white disabled:bg-gray-100 disabled:text-gray-400 disabled:cursor-not-allowed"
-          >
-            {!currentPath ? (
-              <option value="">Select a project first</option>
-            ) : mapListLoading ? (
-              <option value="">Loading maps...</option>
-            ) : (
-              <>
-                <option value="">None (blank map)</option>
-                {mapList.map((m) => (
-                  <option key={m.id} value={m.id}>
-                    Map{String(m.id).padStart(3, '0')} -- {m.name}
-                  </option>
-                ))}
-              </>
-            )}
-          </select>
-          <button
-            onClick={handleOpenTilesetInspector}
-            disabled={tilesetInspectorLoading || !selectedTemplateMapId}
-            className="px-3 py-2 bg-gray-800 text-white text-xs rounded hover:bg-black disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {tilesetInspectorLoading ? 'Loading...' : 'Show Tileset IDs'}
-          </button>
-        </div>
-        {tilesetInspectorError && (
-          <div className="mt-2 text-xs text-red-600">{tilesetInspectorError}</div>
-        )}
-
-        <div className="mt-4">
-          <h4 className="text-xs font-semibold text-gray-700 mb-2">POC Map Tests</h4>
-          <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
-            <button
-              onClick={() => handleRunMapTest('sanity')}
-              disabled={mapTestRunning || !selectedTemplateMapId}
-              className="px-3 py-2 bg-slate-700 text-white text-xs rounded hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              Sanity Test
+              {mapTestRunning ? 'Running…' : 'Sanity test'}
             </button>
             <button
-              onClick={() => handleRunMapTest('ai')}
+              type="button"
+              onClick={() => void handleRunMapTest('ai')}
               disabled={mapTestRunning || !hasApiKey || !selectedTemplateMapId}
-              className="px-3 py-2 bg-purple-600 text-white text-xs rounded hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed"
-              title={!hasApiKey ? 'AI key required' : !selectedTemplateMapId ? 'Select a template map' : 'AI-driven scattered edits'}
+              className="rounded-lg bg-purple-600 px-3 py-2.5 text-xs font-medium text-white hover:bg-purple-700 disabled:cursor-not-allowed disabled:opacity-50"
             >
-              Run AI Tests
+              AI scattered edits
             </button>
             <button
-              onClick={() => handleRunMapTest('object')}
+              type="button"
+              onClick={() => void handleRunMapTest('object')}
               disabled={mapTestRunning || !hasApiKey || !selectedTemplateMapId}
-              className="px-3 py-2 bg-emerald-600 text-white text-xs rounded hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed"
-              title={!hasApiKey ? 'AI key required' : !selectedTemplateMapId ? 'Select a template map' : 'Place coherent multi-tile objects (trees, etc.)'}
+              className="rounded-lg bg-emerald-600 px-3 py-2.5 text-xs font-medium text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
             >
-              Object Test
+              Object placement test
             </button>
           </div>
           {mapTestResult && (
-            <div className={`mt-2 text-xs ${mapTestResult.success ? 'text-green-600' : 'text-red-600'}`}>
+            <div
+              className={`mt-4 rounded-lg border px-3 py-2.5 text-xs ${
+                mapTestResult.success
+                  ? 'border-green-200 bg-green-50 text-green-800'
+                  : 'border-red-200 bg-red-50 text-red-800'
+              }`}
+            >
               {mapTestResult.message}
             </div>
           )}
-        </div>
+        </HeaderPopover>
+
+        <HeaderPopover
+          label={
+            <span className="inline-flex items-center gap-1.5">
+              <HelpCircle size={17} strokeWidth={2} aria-hidden />
+              <span>Help</span>
+            </span>
+          }
+          isOpen={headerPanel === 'help'}
+          onOpenChange={(o) => openHeaderPanel('help', o)}
+          align="right"
+          panelMaxWidthPx={360}
+        >
+          <WorkbenchHelpPanel />
+        </HeaderPopover>
       </div>
 
-      {tilesetInspector && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[9999] p-4">
-          <div className="bg-white rounded-lg shadow-xl max-w-5xl w-full p-6 flex flex-col max-h-[90vh] overflow-hidden">
-            <div className="flex justify-between items-center mb-4">
-              <div>
-                <h3 className="text-lg font-bold text-gray-800">Tileset IDs</h3>
-                <p className="text-xs text-gray-500">
-                  Map: {tilesetInspector.mapName} (ID {tilesetInspector.mapId}) · Tileset {tilesetInspector.tilesetId}
-                </p>
-              </div>
-              <button onClick={closeTilesetInspector} className="text-gray-400 hover:text-gray-600">✕</button>
-            </div>
-
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-              <div className="flex flex-col">
-                <h4 className="text-xs font-semibold text-gray-700 mb-2">Regular Tiles</h4>
-            <div className="flex-1 overflow-auto border border-gray-200 rounded bg-gray-50 p-2 max-h-[60vh]">
-                  <div className="relative inline-block">
-                    <img
-                      ref={tilesetImageRef}
-                      src={tilesetInspector.tilesetImageDataUrl || tilesetInspector.tilesetImageUrl}
-                      alt="Tileset"
-                      className="block max-w-full h-auto"
-                    />
-                    <canvas ref={tilesetCanvasRef} className="absolute left-0 top-0 pointer-events-none" />
-                  </div>
-                </div>
-              </div>
-
-              <div className="flex flex-col">
-                <h4 className="text-xs font-semibold text-gray-700 mb-2">Autotiles</h4>
-                <div className="flex-1 overflow-auto border border-gray-200 rounded bg-gray-50 p-2 max-h-[60vh]">
-                  {(tilesetInspector.autotileImageDataUrls || []).some((u, i) => !!(u || tilesetInspector.autotileImageUrls?.[i])) ? (
-                    <div className="grid grid-cols-2 gap-3">
-                      {(tilesetInspector.autotileImageDataUrls || []).map((dataUrl, index) => {
-                        const src = dataUrl || tilesetInspector.autotileImageUrls?.[index];
-                        if (!src) return null;
-                        return (
-                        <div key={index} className="bg-white border border-gray-200 rounded p-2">
-                          <img
-                            src={src}
-                            alt={`Autotile ${index + 1}`}
-                            className="block w-full h-auto max-h-28 object-contain"
-                          />
-                          <div className="mt-1 text-[10px] text-gray-500 truncate">
-                            {tilesetInspector.autotileImagePaths?.[index] || `Autotile ${index + 1}`}
-                          </div>
-                        </div>
-                        );
-                      })}
-                    </div>
-                  ) : (
-                    <div className="text-xs text-gray-500">No autotiles configured.</div>
-                  )}
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-    </section>
+      <ConnectionResultModal result={testResult} onClose={() => setTestResult(null)} />
+      <WorkbenchTilesetInspectorModal data={tilesetInspector} onClose={closeTilesetInspector} />
+    </>
   );
 };
 
