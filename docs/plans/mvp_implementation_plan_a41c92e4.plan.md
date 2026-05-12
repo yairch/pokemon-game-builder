@@ -1,6 +1,6 @@
 ---
 name: MVP Implementation Plan
-overview: A phased plan to evolve the Pokemon Game Builder from its current POC state into a functional MVP where a user can describe a Pokemon town and get a playable map with buildings, NPCs, and working warps -- built as incremental PRs with integration tests at every step.
+overview: A phased plan to evolve the Pokemon Game Builder from its current POC state into a functional MVP where a user can describe a Pokemon town and get a playable map with buildings, NPCs, and working warps — built as incremental PRs with integration tests at every step. GUI layout and editor UX follow the ordered phases in gui_editor_mvp_roadmap.md (G0 → GW → G1 → …); see Sequencing section in this file.
 todos:
   - id: pr-0-1
     content: "PR 0.1: Set up Vitest test infrastructure (main + renderer configs, smoke tests)"
@@ -23,6 +23,9 @@ todos:
   - id: pr-g0-3
     content: "PR-G0-3: Layer strip (L1/L2/L3/Events dimming/focus) + toggleable grid overlay (default on); aria-pressed on strip"
     status: completed
+  - id: pr-gw
+    content: "GW: Workbench layout rework — sticky top bar (project/AI/template/tests/help), horizontal Map Workbench | Chat split, draggable dividers; details in gui_editor_mvp_roadmap §GW"
+    status: pending
   - id: pr-1-2
     content: "PR 1.2: Tileset vision (send tileset image to Claude/Gemini with prompts)"
     status: pending
@@ -66,7 +69,22 @@ isProject: false
 **Test framework**: Vitest
 **Plan location**: `docs/plans/`
 
-**GUI / workbench companion:** [`gui_editor_mvp_roadmap.md`](./gui_editor_mvp_roadmap.md) — map tree, layer UX, palette integration, and post-MVP editing (paint tools, right-click menus).
+**GUI / workbench companion:** [`gui_editor_mvp_roadmap.md`](./gui_editor_mvp_roadmap.md) — owns layout, preview parity, and editor UX. This plan owns Ruby bridge, AI pipelines, validation, and agent architecture; **use the companion for GUI phase order and scope.**
+
+### Sequencing (main plan and GUI companion)
+
+Single source of truth for GUI ordering is **[§ MVP phases (GUI track)](./gui_editor_mvp_roadmap.md#mvp-phases-gui-track)** in the companion. Condensed merge order:
+
+1. **Phase 0** (this doc) — foundation PRs **0.1 → 0.2 → 0.3**
+2. **PR 1.1** (this doc) — canvas map preview base
+3. **G0** (companion [`§G0`](./gui_editor_mvp_roadmap.md#g0--workbench-shell-pr-11-follow-ups)) — **PR-G0-1 → PR-G0-2 → PR-G0-3** (preview parity inside the legacy single-column shell)
+4. **GW** (companion [`§GW`](./gui_editor_mvp_roadmap.md#gw--workbench-rework-between-g0-and-g1)) — **Workbench rework** (multi-pane layout, top bar, Workbench \| Chat split). Companion places GW **after G0** and **before G1**; tracked here as todo **`pr-gw`**
+5. **PR 1.2** (this doc) — tileset vision; may **overlap or follow GW** (companion traceability: keep palette/preview aligned); does not replace GW
+6. **Phase 2+** (this doc) — semantic tiles, events, town pipeline, agent architecture — continue on **`master`** as below
+7. **G1** (companion) — preview fidelity (e.g. RMXP-style autotiles) **after GW**
+8. **G2+** (companion) — editing, deeper workbench integration — post-MVP core per companion
+
+For a one-page mapping from main-plan PRs to GUI milestones, see **[§ Traceability to main MVP plan](./gui_editor_mvp_roadmap.md#traceability-to-main-mvp-plan)** in the companion.
 
 ---
 
@@ -86,7 +104,7 @@ The project is a working POC with:
 
 - AI has no semantic tile context in chat prompts (Phase 2 owns this).
 - Map preview uses **static frame 0** for autotiles — not RMXP-composed water/edges (tracked in GUI roadmap **G1**).
-- GUI is a single scrolling left column; PR **PR-G0-1**–**PR-G0-3** (GUI roadmap **G0**) ship map tree, event markers, layer strip + grid before **GW** (workbench layout).
+- GUI: **G0** complete (map tree, `read-map` preview, markers, layer strip, grid) still sits in a **single scrolling column**; **GW** (multi-pane workbench) is the next GUI milestone — see companion [`§GW`](./gui_editor_mvp_roadmap.md#gw--workbench-rework-between-g0-and-g1) and todo **`pr-gw`** above.
 
 ---
 
@@ -125,9 +143,9 @@ The main user-facing flow is broken: maps created via chat are invisible in RPG 
 
 ---
 
-## Phase 1: Visual Feedback (canvas, G0 preview parity ×3, vision)
+## Phase 1: Visual Feedback (canvas, G0, GW, vision)
 
-Users need to see what the AI generates without opening RPG Maker.
+Users need to see what the AI generates without opening RPG Maker. **Order vs companion:** **PR 1.1** → **G0** (`PR-G0-1` … `PR-G0-3`) → **GW** → **PR 1.2** by default (vision may **overlap** GW); **G1** (autotile parity) follows **GW** — see [Sequencing](#sequencing-main-plan-and-gui-companion) and [`gui_editor_mvp_roadmap.md`](./gui_editor_mvp_roadmap.md).
 
 ### PR 1.1 -- Canvas Map Preview (base merged)
 
@@ -141,11 +159,11 @@ Replace the metadata-only `[MapPreview.tsx](src/renderer/components/MapPreview.t
 - Integration test: render a known small map (e.g. 5x5) to canvas, verify canvas dimensions and that draw calls occur for non-zero tiles
 - Wire into the post-test and post-chat flows so the preview updates after map generation
 
-Follow-up preview parity lives in **`PR-G0-1`** through **`PR-G0-3`** (scheduled and detailed in [`gui_editor_mvp_roadmap.md`](./gui_editor_mvp_roadmap.md) §G0). Deliver in that order before **GW**.
+Follow-up preview parity lives in **`PR-G0-1`** through **`PR-G0-3`** (scheduled and detailed in [`gui_editor_mvp_roadmap.md`](./gui_editor_mvp_roadmap.md) §G0). Deliver in that order, then **GW** ([`§GW`](./gui_editor_mvp_roadmap.md#gw--workbench-rework-between-g0-and-g1)) before companion **G1** (preview fidelity).
 
 ### PR 1.2 -- Tileset Image to AI (Vision)
 
-Send the tileset image alongside map-generation prompts so the AI can see what tiles look like.
+Send the tileset image alongside map-generation prompts so the AI can see what tiles look like. Schedule **after G0**; **GW** can land before, after, or in parallel — prefer finishing **GW** early so vision + chat share the workbench layout ([traceability table](./gui_editor_mvp_roadmap.md#traceability-to-main-mvp-plan)).
 
 - Extend `IAIService.chat` signature: `chat(message: string, context: any, images?: string[])` where images are base64 data URLs
 - Update `[ClaudeAIService](src/main/ai-service-claude.ts)` to send images via the `content` array (Anthropic vision API: `{ type: "image", source: { type: "base64", ... } }`)
