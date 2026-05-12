@@ -23,6 +23,8 @@ interface MapPreviewProps {
   /** True when MapInfos has no maps (project may still be selected) */
   noMapsInProject?: boolean;
   onInspectTileset?: () => void;
+  /** Expand vertically inside a flex workbench pane */
+  fillWorkbench?: boolean;
 }
 
 function loadImageFromSrc(src: string): Promise<HTMLImageElement> {
@@ -49,6 +51,7 @@ const MapPreview: React.FC<MapPreviewProps> = ({
   previewLoadError,
   noMapsInProject = false,
   onInspectTileset,
+  fillWorkbench = false,
 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const viewportRef = useRef<HTMLDivElement>(null);
@@ -68,6 +71,7 @@ const MapPreview: React.FC<MapPreviewProps> = ({
     lastY: 0,
   });
   const pointerRef = useRef<{ moved: boolean }>({ moved: false });
+  const lastCanvasFitRef = useRef<{ mapId: number; cw: number; ch: number } | null>(null);
 
   useEffect(() => {
     setImages(null);
@@ -75,9 +79,12 @@ const MapPreview: React.FC<MapPreviewProps> = ({
     setHoverTile(null);
     setHoverEvent(null);
     setSelectedTile(null);
-    setZoom(1);
+    if (!fillWorkbench) {
+      setZoom(1);
+      setPan({ x: 0, y: 0 });
+    }
     setShowGrid(true);
-    setPan({ x: 0, y: 0 });
+    lastCanvasFitRef.current = null;
     if (!mapData || !projectPath) return;
 
     let cancelled = false;
@@ -140,7 +147,38 @@ const MapPreview: React.FC<MapPreviewProps> = ({
     return () => {
       cancelled = true;
     };
-  }, [mapData, projectPath]);
+  }, [mapData, projectPath, fillWorkbench]);
+
+  const fitPreviewToViewport = useCallback(() => {
+    const vp = viewportRef.current;
+    const canvas = canvasRef.current;
+    if (!vp || !canvas || !fillWorkbench || !mapData || !images) return;
+    const mw = canvas.width;
+    const mh = canvas.height;
+    if (mw <= 0 || mh <= 0) return;
+    const vw = vp.clientWidth;
+    const vh = vp.clientHeight;
+    if (vw <= 0 || vh <= 0) return;
+    const pad = 14;
+    const zx = (vw - pad * 2) / mw;
+    const zy = (vh - pad * 2) / mh;
+    const z = Math.min(zx, zy, 8);
+    const clampedZ = Math.max(0.15, z);
+    setZoom(clampedZ);
+    setPan({
+      x: (vw - mw * clampedZ) / 2,
+      y: (vh - mh * clampedZ) / 2,
+    });
+  }, [fillWorkbench, mapData, images]);
+
+  useEffect(() => {
+    if (!fillWorkbench || !mapData || !images) return;
+    const vp = viewportRef.current;
+    if (!vp || typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(() => fitPreviewToViewport());
+    ro.observe(vp);
+    return () => ro.disconnect();
+  }, [fillWorkbench, mapData, images, fitPreviewToViewport]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -167,7 +205,17 @@ const MapPreview: React.FC<MapPreviewProps> = ({
       emphasized: eventsMode,
       markerOpacity: layerFocusMode === 'all' || eventsMode ? 1 : 0.42,
     });
-  }, [layerFocusMode, mapData, images, selectedTile, showGrid]);
+
+    if (fillWorkbench) {
+      const cw = canvas.width;
+      const ch = canvas.height;
+      const prev = lastCanvasFitRef.current;
+      if (!prev || prev.mapId !== mapData.id || prev.cw !== cw || prev.ch !== ch) {
+        lastCanvasFitRef.current = { mapId: mapData.id, cw, ch };
+        window.requestAnimationFrame(() => fitPreviewToViewport());
+      }
+    }
+  }, [layerFocusMode, mapData, images, selectedTile, showGrid, fillWorkbench, fitPreviewToViewport]);
 
   const pointerToTile = useCallback(
     (clientX: number, clientY: number): { x: number; y: number } | null => {
@@ -238,8 +286,10 @@ const MapPreview: React.FC<MapPreviewProps> = ({
   }, []);
 
   return (
-    <section className="rounded-xl border border-zinc-200/90 bg-white p-4 shadow-sm ring-1 ring-black/[0.03]">
-      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+    <section
+      className={`rounded-xl border border-zinc-200/90 bg-white p-4 shadow-sm ring-1 ring-black/[0.03] ${fillWorkbench ? 'flex h-full min-h-0 flex-1 flex-col' : ''}`}
+    >
+      <div className={`mb-3 flex flex-wrap items-center justify-between gap-2 ${fillWorkbench ? 'shrink-0' : ''}`}>
         <div className="flex min-w-0 items-center gap-2">
           <h2 className="text-xs font-semibold uppercase tracking-wide text-zinc-500">Preview</h2>
           {projectPath && mapData && onInspectTileset && (
@@ -278,8 +328,12 @@ const MapPreview: React.FC<MapPreviewProps> = ({
               type="button"
               className="inline-flex h-8 w-8 items-center justify-center rounded-md text-zinc-600 transition-colors hover:bg-white hover:text-zinc-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/50"
               onClick={() => {
-                setZoom(1);
-                setPan({ x: 0, y: 0 });
+                if (fillWorkbench) {
+                  fitPreviewToViewport();
+                } else {
+                  setZoom(1);
+                  setPan({ x: 0, y: 0 });
+                }
               }}
               aria-label="Reset pan and zoom"
               title="Reset view"
@@ -307,7 +361,7 @@ const MapPreview: React.FC<MapPreviewProps> = ({
         )}
       </div>
       {mapData && (
-        <div className="mb-3 flex flex-wrap items-center gap-1 rounded-lg border border-zinc-200/90 bg-zinc-50/80 p-1">
+        <div className={`mb-3 flex flex-wrap items-center gap-1 rounded-lg border border-zinc-200/90 bg-zinc-50/80 p-1 ${fillWorkbench ? 'shrink-0' : ''}`}>
           {LAYER_FOCUS_OPTIONS.map((option) => {
             const active = layerFocusMode === option.mode;
             return (
@@ -367,8 +421,12 @@ const MapPreview: React.FC<MapPreviewProps> = ({
       )}
 
       {mapData && !previewLoadError && (
-        <div className="space-y-2">
-          <div className="text-[13px] text-zinc-600">
+        <div
+          className={
+            fillWorkbench ? 'flex min-h-0 flex-1 flex-col gap-2' : 'space-y-2'
+          }
+        >
+          <div className={`text-[13px] text-zinc-600 ${fillWorkbench ? 'shrink-0' : ''}`}>
             <span className="font-semibold text-zinc-900">{mapData.name}</span>
             <span className="mx-2 text-zinc-300">·</span>
             <span className="text-zinc-500">
@@ -430,7 +488,9 @@ const MapPreview: React.FC<MapPreviewProps> = ({
 
           <div
             ref={viewportRef}
-            className="relative h-[280px] w-full cursor-grab overflow-hidden rounded-lg border border-zinc-900/90 bg-neutral-950 shadow-inner ring-1 ring-black/20 active:cursor-grabbing"
+            className={`relative w-full min-h-0 cursor-grab overflow-hidden rounded-lg border border-zinc-900/90 bg-neutral-950 shadow-inner ring-1 ring-black/20 active:cursor-grabbing ${
+              fillWorkbench ? 'flex-1' : 'h-[280px]'
+            }`}
             onWheel={onWheel}
             onMouseDown={onMouseDown}
             onMouseMove={onMouseMove}
@@ -452,7 +512,7 @@ const MapPreview: React.FC<MapPreviewProps> = ({
               </div>
             )}
           </div>
-          <p className="text-[11px] leading-snug text-zinc-400">
+          <p className={`text-[11px] leading-snug text-zinc-400 ${fillWorkbench ? 'shrink-0' : ''}`}>
             Click tile to select · Drag to pan · Scroll to zoom · Grid toggle in toolbar · Autotiles use a single static frame (MVP)
           </p>
         </div>
