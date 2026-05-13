@@ -26,6 +26,9 @@ todos:
   - id: pr-gw
     content: "GW: Workbench layout rework — sticky top bar (project/AI/template/tests/help), horizontal Map Workbench | Chat split, draggable dividers; details in gui_editor_mvp_roadmap §GW"
     status: pending
+  - id: pr-gw-map-tree
+    content: "GW+: Interactive map tree — @dnd-kit reorder/reparent, MapInfos/System Ruby writes, delete with full integrity preflight + proactive start-map warning UI (see map_worktree_editor_design.plan.md)"
+    status: pending
   - id: pr-1-2
     content: "PR 1.2: Tileset vision (send tileset image to Claude/Gemini with prompts)"
     status: pending
@@ -71,6 +74,8 @@ isProject: false
 
 **GUI / workbench companion:** [`gui_editor_mvp_roadmap.md`](./gui_editor_mvp_roadmap.md) — owns layout, preview parity, and editor UX. This plan owns Ruby bridge, AI pipelines, validation, and agent architecture; **use the companion for GUI phase order and scope.**
 
+**Interactive map tree (GW+):** [`map_worktree_editor_design.plan.md`](./map_worktree_editor_design.plan.md) — drag-drop MapInfos hierarchy, delete + scan pipeline, System integrity; tracked as todo **`pr-gw-map-tree`**.
+
 ### Sequencing (main plan and GUI companion)
 
 Single source of truth for GUI ordering is **[§ MVP phases (GUI track)](./gui_editor_mvp_roadmap.md#mvp-phases-gui-track)** in the companion. Condensed merge order:
@@ -79,10 +84,11 @@ Single source of truth for GUI ordering is **[§ MVP phases (GUI track)](./gui_e
 2. **PR 1.1** (this doc) — canvas map preview base
 3. **G0** (companion [`§G0`](./gui_editor_mvp_roadmap.md#g0--workbench-shell-pr-11-follow-ups)) — **PR-G0-1 → PR-G0-2 → PR-G0-3** (preview parity inside the legacy single-column shell)
 4. **GW** (companion [`§GW`](./gui_editor_mvp_roadmap.md#gw--workbench-rework-between-g0-and-g1)) — **Workbench rework** (multi-pane layout, top bar, Workbench \| Chat split). Companion places GW **after G0** and **before G1**; tracked here as todo **`pr-gw`**
-5. **PR 1.2** (this doc) — tileset vision; may **overlap or follow GW** (companion traceability: keep palette/preview aligned); does not replace GW
-6. **Phase 2+** (this doc) — semantic tiles, events, town pipeline, agent architecture — continue on **`master`** as below
-7. **G1** (companion) — preview fidelity (e.g. RMXP-style autotiles) **after GW**
-8. **G2+** (companion) — editing, deeper workbench integration — post-MVP core per companion
+5. **GW+ map tree** — interactive hierarchy + delete integrity (todo **`pr-gw-map-tree`**); spec [`map_worktree_editor_design.plan.md`](./map_worktree_editor_design.plan.md). Intended **after or late-overlap with GW** so pane layout is stable.
+6. **PR 1.2** (this doc) — tileset vision; may **overlap or follow GW** (companion traceability: keep palette/preview aligned); does not replace GW
+7. **Phase 2+** (this doc) — semantic tiles, events, town pipeline, agent architecture — continue on **`master`** as below
+8. **G1** (companion) — preview fidelity (e.g. RMXP-style autotiles) **after GW**
+9. **G2+** (companion) — editing, deeper workbench integration — post-MVP core per companion
 
 For a one-page mapping from main-plan PRs to GUI milestones, see **[§ Traceability to main MVP plan](./gui_editor_mvp_roadmap.md#traceability-to-main-mvp-plan)** in the companion.
 
@@ -104,7 +110,7 @@ The project is a working POC with:
 
 - AI has no semantic tile context in chat prompts (Phase 2 owns this).
 - Map preview uses **static frame 0** for autotiles — not RMXP-composed water/edges (tracked in GUI roadmap **G1**).
-- GUI: **G0** complete (map tree, `read-map` preview, markers, layer strip, grid) still sits in a **single scrolling column**; **GW** (multi-pane workbench) is the next GUI milestone — see companion [`§GW`](./gui_editor_mvp_roadmap.md#gw--workbench-rework-between-g0-and-g1) and todo **`pr-gw`** above.
+- GUI: **G0** complete (map tree, `read-map` preview, markers, layer strip, grid) still sits in a **single scrolling column**; **GW** (multi-pane workbench) is the next GUI milestone — see companion [`§GW`](./gui_editor_mvp_roadmap.md#gw--workbench-rework-between-g0-and-g1) and todo **`pr-gw`** above. **Interactive tree** (drag-drop, delete, integrity scan, start-map banner) is specified in [`map_worktree_editor_design.plan.md`](./map_worktree_editor_design.plan.md) (**`pr-gw-map-tree`**).
 
 ---
 

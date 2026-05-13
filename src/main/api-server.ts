@@ -42,8 +42,17 @@ api.get('/api/read-map/:mapId', async (req, res) => {
   res.json(await h.handleReadMap(req.query.projectPath as string, parseInt(req.params.mapId)));
 });
 api.get('/api/read-map-infos', async (req, res) => res.json(await h.handleReadMapInfos(req.query.projectPath as string)));
+api.post('/api/apply-map-infos-tree', async (req, res) => {
+  const { projectPath, rows } = req.body ?? {};
+  res.json(await h.handleApplyMapInfosTree(projectPath, rows));
+});
 api.get('/api/read-tilesets', async (req, res) => res.json(await h.handleReadTilesets(req.query.projectPath as string)));
 api.get('/api/read-system', async (req, res) => res.json(await h.handleReadSystem(req.query.projectPath as string)));
+api.get('/api/map-rxdata-exists', async (req, res) => {
+  const mapIdRaw = req.query.mapId as string | undefined;
+  const mapId = mapIdRaw != null ? parseInt(mapIdRaw, 10) : NaN;
+  res.json(await h.handleMapRxdataExists(req.query.projectPath as string, mapId));
+});
 api.get('/api/read-project-context', async (req, res) => res.json(await h.handleReadProjectContext(req.query.projectPath as string)));
 
 // --- Tileset inspector ---

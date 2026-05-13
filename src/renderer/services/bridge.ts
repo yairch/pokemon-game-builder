@@ -110,6 +110,14 @@ export const bridge = {
           const res = await fetch(`${API_BASE}/read-map-infos?projectPath=${encodeURIComponent(projectPath)}`);
           return res.json();
         }
+        case 'apply-map-infos-tree': {
+          const res = await fetch(`${API_BASE}/apply-map-infos-tree`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(data),
+          });
+          return res.json();
+        }
         case 'read-tilesets': {
           const { projectPath } = data;
           const res = await fetch(`${API_BASE}/read-tilesets?projectPath=${encodeURIComponent(projectPath)}`);
@@ -118,6 +126,13 @@ export const bridge = {
         case 'read-system': {
           const { projectPath } = data;
           const res = await fetch(`${API_BASE}/read-system?projectPath=${encodeURIComponent(projectPath)}`);
+          return res.json();
+        }
+        case 'map-rxdata-exists': {
+          const { projectPath, mapId } = data;
+          const res = await fetch(
+            `${API_BASE}/map-rxdata-exists?projectPath=${encodeURIComponent(projectPath)}&mapId=${encodeURIComponent(String(mapId))}`
+          );
           return res.json();
         }
         case 'read-project-context': {

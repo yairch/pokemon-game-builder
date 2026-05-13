@@ -232,11 +232,19 @@ const MapPreview: React.FC<MapPreviewProps> = ({
     [images, mapData, pan.x, pan.y, zoom]
   );
 
-  const onWheel = useCallback((e: React.WheelEvent) => {
-    e.preventDefault();
-    const factor = e.deltaY > 0 ? 0.92 : 1.08;
-    setZoom((z) => Math.min(6, Math.max(0.12, z * factor)));
-  }, []);
+  /** React `onWheel` cannot reliably cancel scrolling on ancestors; use non-passive listener. */
+  useEffect(() => {
+    const el = viewportRef.current;
+    if (!el || !mapData) return;
+    const handler = (e: WheelEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const factor = e.deltaY > 0 ? 0.92 : 1.08;
+      setZoom((z) => Math.min(6, Math.max(0.12, z * factor)));
+    };
+    el.addEventListener('wheel', handler, { passive: false });
+    return () => el.removeEventListener('wheel', handler);
+  }, [mapData]);
 
   const onMouseDown = useCallback((e: React.MouseEvent) => {
     if (e.button !== 0) return;
@@ -285,9 +293,11 @@ const MapPreview: React.FC<MapPreviewProps> = ({
     setHoverEvent(null);
   }, []);
 
+  const outerPad = fillWorkbench ? 'p-3' : 'p-4';
+
   return (
     <section
-      className={`rounded-xl border border-zinc-200/90 bg-white p-4 shadow-sm ring-1 ring-black/[0.03] ${fillWorkbench ? 'flex h-full min-h-0 flex-1 flex-col' : ''}`}
+      className={`rounded-xl border border-zinc-200/90 bg-white shadow-sm ring-1 ring-black/[0.03] ${outerPad} ${fillWorkbench ? 'flex min-h-full w-full flex-col' : ''}`}
     >
       <div className={`mb-3 flex flex-wrap items-center justify-between gap-2 ${fillWorkbench ? 'shrink-0' : ''}`}>
         <div className="flex min-w-0 items-center gap-2">
@@ -423,7 +433,7 @@ const MapPreview: React.FC<MapPreviewProps> = ({
       {mapData && !previewLoadError && (
         <div
           className={
-            fillWorkbench ? 'flex min-h-0 flex-1 flex-col gap-2' : 'space-y-2'
+            fillWorkbench ? 'flex min-h-[220px] flex-1 flex-col gap-2 basis-0' : 'space-y-2'
           }
         >
           <div className={`text-[13px] text-zinc-600 ${fillWorkbench ? 'shrink-0' : ''}`}>
@@ -488,10 +498,9 @@ const MapPreview: React.FC<MapPreviewProps> = ({
 
           <div
             ref={viewportRef}
-            className={`relative w-full min-h-0 cursor-grab overflow-hidden rounded-lg border border-zinc-900/90 bg-neutral-950 shadow-inner ring-1 ring-black/20 active:cursor-grabbing ${
-              fillWorkbench ? 'flex-1' : 'h-[280px]'
+            className={`relative w-full min-h-0 cursor-grab overflow-hidden overscroll-contain rounded-lg border border-zinc-900/90 bg-neutral-950 shadow-inner ring-1 ring-black/20 active:cursor-grabbing ${
+              fillWorkbench ? 'min-h-[140px] flex-1' : 'h-[280px]'
             }`}
-            onWheel={onWheel}
             onMouseDown={onMouseDown}
             onMouseMove={onMouseMove}
             onMouseUp={onMouseUp}

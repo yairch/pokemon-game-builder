@@ -15,6 +15,16 @@ export function createMainWindow() {
   });
 
   if (!app.isPackaged) {
+    // Mirror renderer console output to the terminal so console.log/debug/warn/error
+    // from the renderer process is visible alongside main-process logs in dev.
+    // Register the listener BEFORE loadURL so we never miss early messages.
+    mainWindow.webContents.on('console-message', (_event, level, message, line, sourceId) => {
+      const labels = ['debug', 'log', 'warn', 'error'] as const;
+      const levelLabel = labels[level] ?? 'log';
+      const where = sourceId ? ` (${sourceId}:${line})` : '';
+      // eslint-disable-next-line no-console
+      console[levelLabel === 'debug' ? 'log' : levelLabel](`[renderer:${levelLabel}]${where} ${message}`);
+    });
     mainWindow.loadURL('http://localhost:5173');
     // mainWindow.webContents.openDevTools();
   } else {

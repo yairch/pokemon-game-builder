@@ -55,6 +55,29 @@ describe('bridge HTTP fallback URLs', () => {
     );
   });
 
+  it('map-rxdata-exists fetches GET with projectPath and mapId query params', async () => {
+    await bridge.invoke('map-rxdata-exists', { projectPath: '/proj', mapId: 12 });
+    expect(fetch).toHaveBeenCalledWith(
+      `${API_BASE}/map-rxdata-exists?projectPath=${encodeURIComponent('/proj')}&mapId=${encodeURIComponent('12')}`
+    );
+  });
+
+  it('apply-map-infos-tree POSTs JSON body to /apply-map-infos-tree', async () => {
+    const payload = {
+      projectPath: '/proj',
+      rows: [
+        { id: 1, parentId: 0, order: 0 },
+        { id: 2, parentId: 1, order: 0 },
+      ],
+    };
+    await bridge.invoke('apply-map-infos-tree', payload);
+    expect(fetch).toHaveBeenCalledWith(`${API_BASE}/apply-map-infos-tree`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+  });
+
   it('read-tilesets fetches GET /read-tilesets with projectPath query param', async () => {
     await bridge.invoke('read-tilesets', { projectPath: '/my/project' });
     expect(fetch).toHaveBeenCalledWith(

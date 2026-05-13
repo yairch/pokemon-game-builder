@@ -1,17 +1,60 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronRight, Folder, Map as MapIcon, Loader2 } from 'lucide-react';
+import {
+  DndContext,
+  DragOverlay,
+  KeyboardSensor,
+  MeasuringStrategy,
+  PointerSensor,
+  pointerWithin,
+  useDraggable,
+  useDroppable,
+  useSensor,
+  useSensors,
+  type CollisionDetection,
+  type DragEndEvent,
+  type DragMoveEvent,
+  type DragStartEvent,
+  type Modifier,
+} from '@dnd-kit/core';
+import { getEventCoordinates } from '@dnd-kit/utilities';
 import type { MapInfosTreeNode } from '../../shared/mapInfosTree';
+import type { DropPosition, HierarchyMoveIntent } from '../../shared/mapInfosHierarchyMove';
 
 interface MapsTreeProps {
   roots: MapInfosTreeNode[];
   selectedMapId: number | null;
   onSelectMap: (mapId: number) => void;
   loading?: boolean;
-  /** Changes when the project changes — resets expansion to “all folders open”. */
+  /** Changes when the project changes — resets expansion to "all folders open". */
   resetKey: string;
   /** Fill a vertical split in the workbench (scroll inside pane). */
   fillWorkbench?: boolean;
+  /** Emitted after a drop; parent decides whether/how to persist the new hierarchy. */
+  onMoveMap?: (intent: HierarchyMoveIntent) => void;
+  /** Disables drag interactions while a move is being persisted. */
+  reorderDisabled?: boolean;
 }
+
+interface DropTargetState {
+  id: number;
+  position: DropPosition;
+}
+
+interface TreeDndCtx {
+  activeId: number | null;
+  dropTarget: DropTargetState | null;
+  reorderDisabled: boolean;
+  /** True when a drag is in progress and this id is a descendant of the dragged map. */
+  isInvalidTarget: (id: number) => boolean;
+}
+
+const TreeDndContext = React.createContext<TreeDndCtx>({
+  activeId: null,
+  dropTarget: null,
+  reorderDisabled: false,
+  isInvalidTarget: () => false,
+});
 
 function collectFolderIds(nodes: MapInfosTreeNode[]): number[] {
   const out: number[] = [];
@@ -28,6 +71,47 @@ function findPathToId(nodes: MapInfosTreeNode[], targetId: number): MapInfosTree
     if (node.info.id === targetId) return [node];
     const sub = findPathToId(node.children, targetId);
     if (sub) return [node, ...sub];
+  }
+  return null;
+}
+
+/** Collect a node + all its descendant ids; used to forbid drops inside the dragged subtree. */
+function collectSubtreeIds(node: MapInfosTreeNode): Set<number> {
+  const out = new Set<number>();
+  const stack: MapInfosTreeNode[] = [node];
+  while (stack.length > 0) {
+    const n = stack.pop() as MapInfosTreeNode;
+    out.add(n.info.id);
+    for (const c of n.children) stack.push(c);
+  }
+  return out;
+}
+
+/**
+ * Position the DragOverlay so its center sits on the cursor at all times. Without this,
+ * dnd-kit positions the overlay at the initial click point + cursor delta — which means
+ * the floating chip is offset from the cursor by however far you clicked from the row's
+ * center. Users instinctively aim the *chip* at the target, but the hit-test math uses
+ * the *cursor*, so the chip-on-target ends up cursor-on-row-edge → `inside` never fires.
+ */
+const snapCenterToCursor: Modifier = ({ activatorEvent, draggingNodeRect, transform }) => {
+  if (!draggingNodeRect || !activatorEvent) return transform;
+  const activatorCoordinates = getEventCoordinates(activatorEvent);
+  if (!activatorCoordinates) return transform;
+  const offsetX = activatorCoordinates.x - draggingNodeRect.left;
+  const offsetY = activatorCoordinates.y - draggingNodeRect.top;
+  return {
+    ...transform,
+    x: transform.x + offsetX - draggingNodeRect.width / 2,
+    y: transform.y + offsetY - draggingNodeRect.height / 2,
+  };
+};
+
+function findNodeById(roots: MapInfosTreeNode[], id: number): MapInfosTreeNode | null {
+  for (const n of roots) {
+    if (n.info.id === id) return n;
+    const sub = findNodeById(n.children, id);
+    if (sub) return sub;
   }
   return null;
 }
@@ -56,6 +140,38 @@ function MapsTreeBranch({
 
   const pad = 6 + depth * 12;
 
+  const dnd = React.useContext(TreeDndContext);
+  const isDraggingThis = dnd.activeId === info.id;
+  const invalidTarget = dnd.isInvalidTarget(info.id);
+
+  const {
+    attributes,
+    listeners,
+    setNodeRef: setDragRef,
+  } = useDraggable({
+    id: `map-${info.id}`,
+    data: { type: 'map', mapId: info.id },
+    disabled: dnd.reorderDisabled,
+  });
+
+  const { setNodeRef: setDropRef } = useDroppable({
+    id: `drop-${info.id}`,
+    data: { type: 'map', mapId: info.id },
+    disabled: dnd.reorderDisabled || invalidTarget,
+  });
+
+  const setRowRef = (el: HTMLDivElement | null) => {
+    setDragRef(el);
+    setDropRef(el);
+  };
+
+  const showBeforeLine =
+    dnd.activeId != null && dnd.dropTarget?.id === info.id && dnd.dropTarget.position === 'before';
+  const showAfterLine =
+    dnd.activeId != null && dnd.dropTarget?.id === info.id && dnd.dropTarget.position === 'after';
+  const showInsideRing =
+    dnd.activeId != null && dnd.dropTarget?.id === info.id && dnd.dropTarget.position === 'inside';
+
   return (
     <li
       role="treeitem"
@@ -63,7 +179,31 @@ function MapsTreeBranch({
       aria-selected={isSelected}
       className="list-none select-none"
     >
-      <div className="group flex items-stretch rounded-lg transition-colors min-h-9" style={{ paddingLeft: pad }}>
+      <div
+        ref={setRowRef}
+        {...attributes}
+        {...listeners}
+        className={`group relative flex items-stretch rounded-lg transition-colors min-h-9 ${
+          isDraggingThis ? 'opacity-40' : ''
+        } ${
+          showInsideRing
+            ? 'bg-blue-100/80 ring-2 ring-inset ring-blue-500 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.7)]'
+            : ''
+        }`}
+        style={{ paddingLeft: pad }}
+      >
+        {showBeforeLine && (
+          <div
+            className="pointer-events-none absolute left-1 right-1 -top-0.5 h-0.5 rounded-full bg-blue-500 shadow-[0_0_0_2px_rgba(59,130,246,0.25)]"
+            aria-hidden
+          />
+        )}
+        {showAfterLine && (
+          <div
+            className="pointer-events-none absolute left-1 right-1 -bottom-0.5 h-0.5 rounded-full bg-blue-500 shadow-[0_0_0_2px_rgba(59,130,246,0.25)]"
+            aria-hidden
+          />
+        )}
         <div className="flex w-7 shrink-0 items-center justify-center mr-0.5">
           {hasChildren ? (
             <button
@@ -71,6 +211,7 @@ function MapsTreeBranch({
               tabIndex={-1}
               className="flex h-7 w-7 items-center justify-center rounded-md text-zinc-500 hover:bg-zinc-200/80 hover:text-zinc-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/60"
               aria-label={expanded ? `Collapse ${name}` : `Expand ${name}`}
+              onPointerDown={(e) => e.stopPropagation()}
               onClick={(e) => {
                 e.stopPropagation();
                 onToggleExpand(info.id);
@@ -148,8 +289,134 @@ const MapsTree: React.FC<MapsTreeProps> = ({
   loading,
   resetKey,
   fillWorkbench = false,
+  onMoveMap,
+  reorderDisabled = false,
 }) => {
   const [expandedIds, setExpandedIds] = useState<Set<number>>(() => new Set());
+  const [activeId, setActiveId] = useState<number | null>(null);
+  const [dropTarget, setDropTarget] = useState<DropTargetState | null>(null);
+  // Mirror state to refs so handleDragEnd sees the most recent values even when
+  // a pointermove → pointerup pair runs before React flushes a re-render.
+  const activeIdRef = useRef<number | null>(null);
+  const dropTargetRef = useRef<DropTargetState | null>(null);
+  useEffect(() => {
+    activeIdRef.current = activeId;
+  }, [activeId]);
+  useEffect(() => {
+    dropTargetRef.current = dropTarget;
+  }, [dropTarget]);
+  /**
+   * Live cursor Y during a drag. Captured inside `collisionDetection` so it stays
+   * in sync with the `over` rect that dnd-kit reports in the same pointer event —
+   * otherwise the before/inside/after band flickers by one frame.
+   */
+  const pointerYRef = useRef<number | null>(null);
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(KeyboardSensor)
+  );
+
+  /**
+   * Pointer-only collision. We deliberately do NOT fall back to rectIntersection: when the
+   * cursor is over the dragged row's own slot the row is a disabled droppable, so dnd-kit
+   * (correctly) yields no hit. Falling back to rectIntersection would snap `over` to an
+   * unrelated neighbor based on the dragged element's rect, producing nonsense ratios.
+   * If the cursor is over a non-droppable area, `over` is null and no indicator shows.
+   */
+  const collisionDetection: CollisionDetection = (args) => {
+    if (args.pointerCoordinates) {
+      pointerYRef.current = args.pointerCoordinates.y;
+    }
+    return pointerWithin(args);
+  };
+
+  /** Lookup the dragged node + its subtree once per drag to forbid drops inside it. */
+  const draggedSubtree = useMemo<Set<number>>(() => {
+    if (activeId == null) return new Set();
+    const node = findNodeById(roots, activeId);
+    return node ? collectSubtreeIds(node) : new Set();
+  }, [activeId, roots]);
+
+  const isInvalidTarget = (id: number) => draggedSubtree.has(id);
+
+  const handleDragStart = (event: DragStartEvent) => {
+    const id = (event.active.data.current as { mapId?: number } | undefined)?.mapId;
+    const next = typeof id === 'number' ? id : null;
+    setActiveId(next);
+    setDropTarget(null);
+    activeIdRef.current = next;
+    dropTargetRef.current = null;
+  };
+
+  // NOTE: we use onDragMove (fires on every pointer event during drag) rather than
+  // onDragOver (only fires when the `over` droppable id changes). With onDragOver, the
+  // ratio is only recomputed at row-boundary crossings — so the band can never resolve
+  // to "inside" because the cursor at a boundary always has ratio ≈ 0 or 1.
+  const handleDragMove = (event: DragMoveEvent) => {
+    const overData = event.over?.data.current as { mapId?: number } | undefined;
+    const activeData = event.active.data.current as { mapId?: number } | undefined;
+    const targetId = overData?.mapId;
+    const draggedId = activeData?.mapId;
+    // Sticky behavior: when the cursor crosses an area without a valid drop target
+    // (e.g. over the dragged row's own slot, the gap between rows, or outside the tree),
+    // we leave the previously-resolved dropTarget in place. The user keeps their visual
+    // highlight and can release confidently. Cancel still clears via onDragCancel.
+    if (
+      targetId == null ||
+      draggedId == null ||
+      targetId === draggedId ||
+      draggedSubtree.has(targetId)
+    ) {
+      return;
+    }
+
+    const overRect = event.over?.rect;
+    if (!overRect) {
+      return;
+    }
+
+    // Prefer live pointer Y; fall back to dragged rect midpoint if pointer is unknown.
+    let probeY = pointerYRef.current;
+    if (probeY == null) {
+      const activeRect = event.active.rect.current.translated;
+      if (!activeRect) {
+        return;
+      }
+      probeY = activeRect.top + activeRect.height / 2;
+    }
+
+    const ratio = (probeY - overRect.top) / Math.max(1, overRect.height);
+    // 0.0–0.2 = before, 0.2–0.8 = inside (reparent / make folder), 0.8–1.0 = after.
+    let position: DropPosition;
+    if (ratio < 0.2) position = 'before';
+    else if (ratio > 0.8) position = 'after';
+    else position = 'inside';
+
+    setDropTarget((prev) => {
+      const next =
+        prev && prev.id === targetId && prev.position === position ? prev : { id: targetId, position };
+      dropTargetRef.current = next;
+      return next;
+    });
+  };
+
+  const resetDrag = () => {
+    setActiveId(null);
+    setDropTarget(null);
+    activeIdRef.current = null;
+    dropTargetRef.current = null;
+    pointerYRef.current = null;
+  };
+
+  const handleDragEnd = (_event: DragEndEvent) => {
+    const draggedId = activeIdRef.current;
+    const target = dropTargetRef.current;
+    resetDrag();
+    if (draggedId == null || !target) return;
+    if (draggedSubtree.has(target.id)) return;
+    onMoveMap?.({ draggedId, targetId: target.id, position: target.position });
+  };
 
   useEffect(() => {
     setExpandedIds(new Set(collectFolderIds(roots)));
@@ -177,15 +444,28 @@ const MapsTree: React.FC<MapsTreeProps> = ({
     });
   };
 
+  const dndCtxValue: TreeDndCtx = {
+    activeId,
+    dropTarget,
+    reorderDisabled,
+    isInvalidTarget,
+  };
+
+  const activeNode = activeId != null ? findNodeById(roots, activeId) : null;
+  const activeName = activeNode?.info?.name?.trim() ? activeNode.info.name : null;
+  const activeIdLabel = activeNode ? `Map${String(activeNode.info.id).padStart(3, '0')}` : '';
+
+  const outerPad = fillWorkbench ? 'p-3' : 'p-4';
+
   return (
     <section
-      className={`rounded-xl border border-zinc-200/90 bg-white p-4 shadow-sm ring-1 ring-black/[0.03] ${fillWorkbench ? 'flex min-h-0 flex-1 flex-col' : ''}`}
+      className={`rounded-xl border border-zinc-200/90 bg-white shadow-sm ring-1 ring-black/[0.03] ${outerPad} ${fillWorkbench ? 'flex h-full min-h-0 flex-1 flex-col overflow-hidden' : ''}`}
     >
       <div className="mb-3 flex shrink-0 items-start justify-between gap-3">
         <div>
           <h2 className="text-xs font-semibold uppercase tracking-wide text-zinc-500">Map browser</h2>
           <p className="mt-1 text-[13px] leading-snug text-zinc-600">
-            Same order as RPG Maker MapInfos. Select a map to preview it from disk.
+            Same order as RPG Maker MapInfos. Drag a map onto another to nest it, or between rows to reorder.
           </p>
         </div>
       </div>
@@ -194,7 +474,7 @@ const MapsTree: React.FC<MapsTreeProps> = ({
         className={`overflow-hidden rounded-lg border border-zinc-200/80 bg-zinc-50/50 ${fillWorkbench ? 'flex min-h-0 flex-1 flex-col' : ''}`}
       >
         <div
-          className={`custom-scrollbar px-1 py-1.5 ${fillWorkbench ? 'min-h-0 flex-1 overflow-y-auto' : 'max-h-72 overflow-y-auto'}`}
+          className={`custom-scrollbar px-1 py-1.5 ${fillWorkbench ? 'min-h-0 flex-1 overflow-y-auto overflow-x-auto' : 'max-h-72 overflow-y-auto overflow-x-auto'}`}
         >
           {loading && (
             <div className="flex items-center gap-2 px-3 py-8 text-sm text-zinc-500" role="status">
@@ -206,19 +486,55 @@ const MapsTree: React.FC<MapsTreeProps> = ({
             <p className="px-3 py-8 text-center text-[13px] text-zinc-500">No maps in this project yet.</p>
           )}
           {!loading && roots.length > 0 && (
-            <ul role="tree" aria-label="Maps in project" className="m-0 list-none p-0">
-              {roots.map((r) => (
-                <MapsTreeBranch
-                  key={r.info.id}
-                  node={r}
-                  depth={0}
-                  selectedMapId={selectedMapId}
-                  expandedIds={expandedIds}
-                  onToggleExpand={toggleExpand}
-                  onSelectMap={onSelectMap}
-                />
-              ))}
-            </ul>
+            <DndContext
+              sensors={sensors}
+              collisionDetection={collisionDetection}
+              // Re-measure droppable rects on every drag move. Cheap enough for this tree
+              // (handful to a few hundred rows) and prevents stale rects when expansion or
+              // selection states change mid-drag.
+              measuring={{ droppable: { strategy: MeasuringStrategy.Always } }}
+              onDragStart={handleDragStart}
+              onDragMove={handleDragMove}
+              onDragEnd={handleDragEnd}
+              onDragCancel={resetDrag}
+            >
+              <TreeDndContext.Provider value={dndCtxValue}>
+                <ul role="tree" aria-label="Maps in project" className="m-0 list-none p-0">
+                  {roots.map((r) => (
+                    <MapsTreeBranch
+                      key={r.info.id}
+                      node={r}
+                      depth={0}
+                      selectedMapId={selectedMapId}
+                      expandedIds={expandedIds}
+                      onToggleExpand={toggleExpand}
+                      onSelectMap={onSelectMap}
+                    />
+                  ))}
+                </ul>
+              </TreeDndContext.Provider>
+              <DragOverlay dropAnimation={null} modifiers={[snapCenterToCursor]}>
+                {activeNode ? (
+                  <div className="pointer-events-none flex items-center gap-2 rounded-md border border-blue-300 bg-white/95 px-2.5 py-1.5 shadow-lg ring-1 ring-blue-200">
+                    <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-blue-50 text-blue-700">
+                      {activeNode.children.length > 0 ? (
+                        <Folder className="h-3.5 w-3.5" strokeWidth={2} />
+                      ) : (
+                        <MapIcon className="h-3.5 w-3.5" strokeWidth={2} />
+                      )}
+                    </span>
+                    <span className="min-w-0">
+                      <span className="block max-w-[14rem] truncate text-[13px] font-medium leading-tight text-zinc-900">
+                        {activeName ?? 'Untitled map'}
+                      </span>
+                      <span className="mt-0.5 block font-mono text-[11px] leading-none tabular-nums text-zinc-500">
+                        {activeIdLabel}
+                      </span>
+                    </span>
+                  </div>
+                ) : null}
+              </DragOverlay>
+            </DndContext>
           )}
         </div>
       </div>
