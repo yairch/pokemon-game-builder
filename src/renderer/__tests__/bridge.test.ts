@@ -55,6 +55,13 @@ describe('bridge HTTP fallback URLs', () => {
     );
   });
 
+  it('map-rxdata-exists fetches GET with projectPath and mapId query params', async () => {
+    await bridge.invoke('map-rxdata-exists', { projectPath: '/proj', mapId: 12 });
+    expect(fetch).toHaveBeenCalledWith(
+      `${API_BASE}/map-rxdata-exists?projectPath=${encodeURIComponent('/proj')}&mapId=${encodeURIComponent('12')}`
+    );
+  });
+
   it('read-tilesets fetches GET /read-tilesets with projectPath query param', async () => {
     await bridge.invoke('read-tilesets', { projectPath: '/my/project' });
     expect(fetch).toHaveBeenCalledWith(

@@ -5,9 +5,11 @@ import MapPreview from './components/MapPreview';
 import MapsTree from './components/MapsTree';
 import { SplitPane } from './components/workbench/SplitPane';
 import { bridge } from './services/bridge';
-import type { MapData, MapInfosReadData } from '../shared/types';
+import type { MapData, MapInfosReadData, SystemReadData } from '../shared/types';
 import { buildMapInfosTree, getDefaultPreviewMapId } from '../shared/mapInfosTree';
 import { mapReadDataToMapData } from '../shared/mapReadToMapData';
+import { computeStartMapIntegrityIssue } from '../shared/startMapIntegrity';
+import StartMapWarningBanner from './components/StartMapWarningBanner';
 
 interface Message {
   role: 'user' | 'assistant';
@@ -24,28 +26,44 @@ const App: React.FC = () => {
 
   const [mapInfos, setMapInfos] = useState<MapInfosReadData | null>(null);
   const [mapInfosLoading, setMapInfosLoading] = useState(false);
+  const [systemData, setSystemData] = useState<SystemReadData | null>(null);
+  const [systemPhase, setSystemPhase] = useState<'unset' | 'loading' | 'ok' | 'error'>('unset');
+  const [startMapRxdataExists, setStartMapRxdataExists] = useState<boolean | null>(null);
   const [previewMapId, setPreviewMapId] = useState<number | null>(null);
   const [previewMap, setPreviewMap] = useState<MapData | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewError, setPreviewError] = useState<string | null>(null);
   const [inspectFromPreview, setInspectFromPreview] = useState<{ mapId: number; nonce: number } | null>(null);
 
-  const reloadMapInfos = useCallback(async () => {
+  const reloadProjectMapsMeta = useCallback(async () => {
     if (!projectPath) return;
     try {
-      const result = await bridge.invoke('read-map-infos', { projectPath });
-      if (!result?.success || !result?.data) {
-        console.error('read-map-infos failed:', result?.error ?? result);
+      const [infosResult, sysResult] = await Promise.all([
+        bridge.invoke('read-map-infos', { projectPath }),
+        bridge.invoke('read-system', { projectPath }),
+      ]);
+      if (infosResult?.success && infosResult.data) setMapInfos(infosResult.data as MapInfosReadData);
+      else {
+        console.error('read-map-infos failed:', infosResult?.error ?? infosResult);
         setMapInfos({});
-        return;
       }
-      setMapInfos(result.data as MapInfosReadData);
+      if (sysResult?.success && sysResult.data) {
+        setSystemData(sysResult.data as SystemReadData);
+        setSystemPhase('ok');
+      } else {
+        console.error('read-system failed:', sysResult?.error ?? sysResult);
+        setSystemData(null);
+        setSystemPhase('error');
+      }
     } catch (e) {
-      console.error('Failed to read map infos:', e);
+      console.error('Failed to read map infos or system:', e);
       setMapInfos({});
+      setSystemData(null);
+      setSystemPhase('error');
     }
   }, [projectPath]);
 
+  const reloadMapInfos = reloadProjectMapsMeta;
   useEffect(() => {
     setMapInfos(null);
     setPreviewMapId(null);
@@ -53,6 +71,9 @@ const App: React.FC = () => {
     setPreviewError(null);
     setSelectedTemplateMapId(null);
     setInspectFromPreview(null);
+    setSystemData(null);
+    setSystemPhase('unset');
+    setStartMapRxdataExists(null);
   }, [projectPath]);
 
   useEffect(() => {
@@ -63,6 +84,7 @@ const App: React.FC = () => {
     let cancelled = false;
     (async () => {
       setMapInfosLoading(true);
+      setSystemPhase('loading');
       await reloadMapInfos();
       if (!cancelled) setMapInfosLoading(false);
     })();
@@ -127,18 +149,59 @@ const App: React.FC = () => {
     async (selectNewMapId?: number) => {
       if (!projectPath) return;
       setMapInfosLoading(true);
+      setSystemPhase('loading');
       try {
-        const result = await bridge.invoke('read-map-infos', { projectPath });
-        if (result?.success && result.data) setMapInfos(result.data as MapInfosReadData);
+        await reloadProjectMapsMeta();
         if (selectNewMapId != null) setPreviewMapId(selectNewMapId);
       } finally {
         setMapInfosLoading(false);
       }
     },
-    [projectPath]
+    [projectPath, reloadProjectMapsMeta]
   );
 
   const mapTreeRoots = useMemo(() => buildMapInfosTree(mapInfos ?? {}), [mapInfos]);
+
+  useEffect(() => {
+    if (!projectPath || systemPhase !== 'ok' || !systemData) {
+      setStartMapRxdataExists(null);
+      return;
+    }
+    if (!mapInfos || mapInfosLoading) {
+      setStartMapRxdataExists(null);
+      return;
+    }
+    const sid = Number(systemData.startMapId);
+    const keys = Object.keys(mapInfos).filter((k) => mapInfos[k] != null);
+    if (keys.length === 0 || sid < 1 || !Object.prototype.hasOwnProperty.call(mapInfos, String(sid))) {
+      setStartMapRxdataExists(null);
+      return;
+    }
+    let cancelled = false;
+    setStartMapRxdataExists(null);
+    bridge
+      .invoke('map-rxdata-exists', { projectPath, mapId: sid })
+      .then((r: { success?: boolean; exists?: boolean }) => {
+        if (!cancelled) setStartMapRxdataExists(r?.success === true ? Boolean(r.exists) : null);
+      })
+      .catch(() => {
+        if (!cancelled) setStartMapRxdataExists(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [projectPath, systemPhase, systemData, mapInfos, mapInfosLoading]);
+
+  const startMapIssue = useMemo(() => {
+    if (systemPhase !== 'ok' || !systemData) return null;
+    return computeStartMapIntegrityIssue({
+      systemReadOk: true,
+      systemData,
+      mapInfos,
+      mapInfosLoading,
+      startMapRxdataExists,
+    });
+  }, [systemPhase, systemData, mapInfos, mapInfosLoading, startMapRxdataExists]);
 
   useEffect(() => {
     const checkApiKey = async () => {
@@ -290,14 +353,21 @@ const App: React.FC = () => {
                 minSecondaryPx={200}
                 primary={
                   projectPath ? (
-                    <MapsTree
-                      roots={mapTreeRoots}
-                      selectedMapId={previewMapId}
-                      onSelectMap={setPreviewMapId}
-                      loading={treeBusy}
-                      resetKey={projectPath}
-                      fillWorkbench
-                    />
+                    <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-2">
+                      {startMapIssue != null && startMapIssue !== 'pending' ? (
+                        <StartMapWarningBanner issue={startMapIssue} />
+                      ) : null}
+                      <div className="min-h-0 flex-1">
+                        <MapsTree
+                          roots={mapTreeRoots}
+                          selectedMapId={previewMapId}
+                          onSelectMap={setPreviewMapId}
+                          loading={treeBusy}
+                          resetKey={projectPath}
+                          fillWorkbench
+                        />
+                      </div>
+                    </div>
                   ) : (
                     <div className="flex min-h-[120px] flex-1 items-center justify-center rounded-xl border border-dashed border-zinc-300 bg-white/80 px-4 text-center text-[13px] text-zinc-500">
                       Open a project to browse maps.

@@ -120,6 +120,13 @@ export const bridge = {
           const res = await fetch(`${API_BASE}/read-system?projectPath=${encodeURIComponent(projectPath)}`);
           return res.json();
         }
+        case 'map-rxdata-exists': {
+          const { projectPath, mapId } = data;
+          const res = await fetch(
+            `${API_BASE}/map-rxdata-exists?projectPath=${encodeURIComponent(projectPath)}&mapId=${encodeURIComponent(String(mapId))}`
+          );
+          return res.json();
+        }
         case 'read-project-context': {
           const { projectPath } = data;
           const res = await fetch(`${API_BASE}/read-project-context?projectPath=${encodeURIComponent(projectPath)}`);

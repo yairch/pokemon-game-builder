@@ -380,6 +380,19 @@ export async function handleReadSystem(projectPath: string) {
   catch (error: any) { return { success: false, error: error.message || 'Failed to read system data.' }; }
 }
 
+/** Whether `Data/Map{id}.rxdata` exists for the given numeric map id. */
+export async function handleMapRxdataExists(projectPath: string, mapId: number) {
+  if (!projectPath) return { success: false, error: 'Project path is required.', exists: false };
+  if (!Number.isFinite(mapId) || mapId < 1) return { success: false, error: 'Valid map ID is required.', exists: false };
+  try {
+    const ps = new ProjectService(projectPath);
+    const exists = fs.existsSync(ps.getMapPath(mapId));
+    return { success: true, exists };
+  } catch (error: any) {
+    return { success: false, error: error.message || 'Failed to check map file.', exists: false };
+  }
+}
+
 export async function handleReadProjectContext(projectPath: string) {
   if (!projectPath) return { success: false, error: 'Project path is required.' };
   const ps = new ProjectService(projectPath);
