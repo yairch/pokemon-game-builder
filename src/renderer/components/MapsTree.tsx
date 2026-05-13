@@ -1,5 +1,13 @@
 import React, { useEffect, useState } from 'react';
 import { ChevronRight, Folder, Map as MapIcon, Loader2 } from 'lucide-react';
+import {
+  DndContext,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from '@dnd-kit/core';
 import type { MapInfosTreeNode } from '../../shared/mapInfosTree';
 
 interface MapsTreeProps {
@@ -151,6 +159,16 @@ const MapsTree: React.FC<MapsTreeProps> = ({
 }) => {
   const [expandedIds, setExpandedIds] = useState<Set<number>>(() => new Set());
 
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(KeyboardSensor)
+  );
+
+  /** Drag handlers wired by Commit 5; scaffolded here so DndContext is in place. */
+  const handleDragEnd = (_event: DragEndEvent) => {
+    /* no-op — reorder/reparent logic lands in the next commit */
+  };
+
   useEffect(() => {
     setExpandedIds(new Set(collectFolderIds(roots)));
   }, [resetKey, roots]);
@@ -208,19 +226,21 @@ const MapsTree: React.FC<MapsTreeProps> = ({
             <p className="px-3 py-8 text-center text-[13px] text-zinc-500">No maps in this project yet.</p>
           )}
           {!loading && roots.length > 0 && (
-            <ul role="tree" aria-label="Maps in project" className="m-0 list-none p-0">
-              {roots.map((r) => (
-                <MapsTreeBranch
-                  key={r.info.id}
-                  node={r}
-                  depth={0}
-                  selectedMapId={selectedMapId}
-                  expandedIds={expandedIds}
-                  onToggleExpand={toggleExpand}
-                  onSelectMap={onSelectMap}
-                />
-              ))}
-            </ul>
+            <DndContext sensors={sensors} onDragEnd={handleDragEnd}>
+              <ul role="tree" aria-label="Maps in project" className="m-0 list-none p-0">
+                {roots.map((r) => (
+                  <MapsTreeBranch
+                    key={r.info.id}
+                    node={r}
+                    depth={0}
+                    selectedMapId={selectedMapId}
+                    expandedIds={expandedIds}
+                    onToggleExpand={toggleExpand}
+                    onSelectMap={onSelectMap}
+                  />
+                ))}
+              </ul>
+            </DndContext>
           )}
         </div>
       </div>
