@@ -7,7 +7,7 @@ import { IAIService, AIProvider } from './ai-service-base';
 import { AIServiceFactory } from './ai-service-factory';
 import { ProjectService } from './project-service';
 import { MapGenerator } from './map-generator';
-import { MapSpec, TilesetInspectorData } from '../shared/types';
+import { MapSpec, TilesetInspectorData, MapInfoHierarchyWriteRow } from '../shared/types';
 import { TileBlock, extractTileBlocks, extractTilePairs } from './tile-utils';
 import { handleChatMapPipeline } from './chat-map-pipeline';
 import * as path from 'path';
@@ -366,6 +366,37 @@ export async function handleReadMapInfos(projectPath: string) {
   if (!projectPath) return { success: false, error: 'Project path is required.' };
   try { return { success: true, data: await mapGenerator.readMapInfos(projectPath) }; }
   catch (error: any) { return { success: false, error: error.message || 'Failed to read map infos.' }; }
+}
+
+/**
+ * Apply a new MapInfos hierarchy (parent_id + order updates only) to MapInfos.rxdata.
+ * `rows` must list every map id currently in MapInfos exactly once; Ruby validates strictly.
+ * Returns the refreshed MapInfos on success so the renderer can drop its old copy.
+ */
+export async function handleApplyMapInfosTree(projectPath: string, rows: MapInfoHierarchyWriteRow[]) {
+  if (!projectPath) return { success: false, error: 'Project path is required.' };
+  if (!Array.isArray(rows)) return { success: false, error: 'rows must be an array of {id, parentId, order}.' };
+  for (const row of rows) {
+    if (!row || typeof row !== 'object') {
+      return { success: false, error: 'Each row must be an object with id, parentId, order.' };
+    }
+    if (!Number.isFinite(row.id) || row.id < 1) {
+      return { success: false, error: `Invalid id ${row?.id}.` };
+    }
+    if (!Number.isFinite(row.parentId) || row.parentId < 0) {
+      return { success: false, error: `Invalid parentId ${row?.parentId} for map ${row?.id}.` };
+    }
+    if (!Number.isFinite(row.order)) {
+      return { success: false, error: `Invalid order ${row?.order} for map ${row?.id}.` };
+    }
+  }
+  try {
+    await mapGenerator.writeMapInfosHierarchy(projectPath, rows);
+    const data = await mapGenerator.readMapInfos(projectPath);
+    return { success: true, data };
+  } catch (error: any) {
+    return { success: false, error: error.message || 'Failed to write map infos hierarchy.' };
+  }
 }
 
 export async function handleReadTilesets(projectPath: string) {

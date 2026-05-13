@@ -110,6 +110,14 @@ export const bridge = {
           const res = await fetch(`${API_BASE}/read-map-infos?projectPath=${encodeURIComponent(projectPath)}`);
           return res.json();
         }
+        case 'apply-map-infos-tree': {
+          const res = await fetch(`${API_BASE}/apply-map-infos-tree`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(data),
+          });
+          return res.json();
+        }
         case 'read-tilesets': {
           const { projectPath } = data;
           const res = await fetch(`${API_BASE}/read-tilesets?projectPath=${encodeURIComponent(projectPath)}`);

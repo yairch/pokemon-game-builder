@@ -44,6 +44,9 @@ ipcMain.handle('run-map-test', (_event, { projectPath, mapName, mapId, testType 
 
 ipcMain.handle('read-map', (_event, { projectPath, mapId }) => h.handleReadMap(projectPath, mapId));
 ipcMain.handle('read-map-infos', (_event, { projectPath }) => h.handleReadMapInfos(projectPath));
+ipcMain.handle('apply-map-infos-tree', (_event, { projectPath, rows }) =>
+  h.handleApplyMapInfosTree(projectPath, rows)
+);
 ipcMain.handle('read-tilesets', (_event, { projectPath }) => h.handleReadTilesets(projectPath));
 ipcMain.handle('read-system', (_event, { projectPath }) => h.handleReadSystem(projectPath));
 ipcMain.handle('map-rxdata-exists', (_event, { projectPath, mapId }) =>
