@@ -119,6 +119,13 @@ export interface MapInfosReadData {
   [mapId: string]: MapInfoData;
 }
 
+/** Payload for Ruby `write_map_infos_hierarchy` (parentId + order only; other MapInfo fields preserved on disk). */
+export interface MapInfoHierarchyWriteRow {
+  id: number;
+  parentId: number;
+  order: number;
+}
+
 export interface TilesetData {
   id: number;
   name: string;

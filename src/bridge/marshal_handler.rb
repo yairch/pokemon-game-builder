@@ -1,6 +1,7 @@
 require 'json'
 require 'fileutils'
 require 'base64'
+require 'set'
 
 # Define RPG Maker XP classes so Marshal can load them
 module RPG
@@ -566,6 +567,87 @@ def update_map_infos(file_path, map_id, name)
   puts "MapInfos updated with map #{map_id}"
 end
 
+def normalize_map_infos_hash(raw)
+  map_infos = raw.nil? ? {} : raw
+  if map_infos.is_a?(Array)
+    normalized = {}
+    map_infos.each_with_index do |info, index|
+      next if info.nil?
+      normalized[index] = info
+    end
+    map_infos = normalized
+  elsif !map_infos.is_a?(Hash)
+    map_infos = {}
+  end
+  map_infos
+end
+
+# stdin: JSON array of { "id", "parentId", "order" } covering every map id in MapInfos exactly.
+def write_map_infos_hierarchy(file_path)
+  unless File.exist?(file_path) && File.size?(file_path)
+    puts JSON.generate({ error: "MapInfos file not found or empty: #{file_path}" })
+    return
+  end
+
+  raw_payload = STDIN.read.to_s
+  payload = JSON.parse(raw_payload)
+  unless payload.is_a?(Array)
+    puts JSON.generate({ error: 'Expected JSON array of {id,parentId,order}' })
+    return
+  end
+
+  map_infos = normalize_map_infos_hash(File.open(file_path, 'rb') { |f| Marshal.load(f) })
+
+  id_set = map_infos.keys.map { |k| k.to_i }.to_set
+  incoming = {}
+
+  payload.each do |row|
+    next unless row.is_a?(Hash)
+    id = row['id'].to_i
+    next if id <= 0
+    pid = row['parentId'].nil? ? row['parent_id'] : row['parentId']
+    pid = pid.to_i
+    ord = row['order'].to_i
+    incoming[id] = { parent_id: pid, order: ord }
+  end
+
+  if incoming.size != id_set.size || incoming.keys.to_set != id_set
+    puts JSON.generate({
+      error: 'Payload map id set must match MapInfos exactly',
+      expectedIds: id_set.to_a.sort,
+      receivedIds: incoming.keys.sort
+    })
+    return
+  end
+
+  incoming.each do |id, h|
+    p = h[:parent_id]
+    if id == p
+      puts JSON.generate({ error: "Map #{id} cannot be its own parent" })
+      return
+    end
+    if p != 0 && !id_set.include?(p)
+      puts JSON.generate({ error: "Invalid parentId #{p} for map #{id}: parent not in MapInfos" })
+      return
+    end
+    info = map_infos[id]
+    unless info
+      puts JSON.generate({ error: "Missing MapInfo object for id #{id}" })
+      return
+    end
+    info.parent_id = p
+    info.order = h[:order]
+  end
+
+  File.open(file_path, 'wb') do |f|
+    Marshal.dump(map_infos, f)
+  end
+
+  puts JSON.generate({ success: true, count: incoming.size })
+rescue JSON::ParserError => e
+  puts JSON.generate({ error: "Invalid JSON on stdin: #{e.message}" })
+end
+
 # ============================================================
 # READ FUNCTIONS - Return JSON to stdout
 # ============================================================
@@ -770,6 +852,8 @@ if __FILE__ == $0
     create_map(ARGV[1], ARGV[2])
   when 'update_map_infos'
     update_map_infos(ARGV[1], ARGV[2], ARGV[3])
+  when 'write_map_infos_hierarchy'
+    write_map_infos_hierarchy(ARGV[1])
   when 'clone_map'
     clone_map(ARGV[1], ARGV[2])
   when 'patch_map_data'

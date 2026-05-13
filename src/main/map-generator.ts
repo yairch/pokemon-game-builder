@@ -13,6 +13,7 @@ import {
   MapEventSpec,
   MapReadData,
   MapInfosReadData,
+  MapInfoHierarchyWriteRow,
   TilesetData,
   SystemReadData
 } from '../shared/types';
@@ -615,6 +616,66 @@ export class MapGenerator {
   async readMapInfos(projectPath: string): Promise<MapInfosReadData> {
     const mapInfosPath = path.join(projectPath, 'Data', 'MapInfos.rxdata');
     return this.runRubyReadCommand<MapInfosReadData>('read_map_infos', mapInfosPath);
+  }
+
+  /**
+   * Rewrite MapInfos.rxdata hierarchy: updates parent_id and order only (names and other fields unchanged).
+   * Payload must include every map id currently in MapInfos exactly once.
+   */
+  async writeMapInfosHierarchy(projectPath: string, rows: MapInfoHierarchyWriteRow[]): Promise<void> {
+    const mapInfosPath = path.join(projectPath, 'Data', 'MapInfos.rxdata');
+    if (!(await fs.pathExists(mapInfosPath))) {
+      throw new Error('MapInfos.rxdata not found.');
+    }
+    return new Promise((resolve, reject) => {
+      const rubyProcess = spawn(this.rubyBinary, [this.rubyScriptPath, 'write_map_infos_hierarchy', mapInfosPath], {
+        stdio: ['pipe', 'pipe', 'pipe'],
+      });
+
+      rubyProcess.stdin.write(JSON.stringify(rows));
+      rubyProcess.stdin.end();
+
+      let stdoutOutput = '';
+      let stderrOutput = '';
+
+      rubyProcess.stdout.on('data', (data: Buffer) => {
+        stdoutOutput += data.toString();
+      });
+      rubyProcess.stderr.on('data', (data: Buffer) => {
+        stderrOutput += data.toString();
+      });
+
+      rubyProcess.on('error', (err: NodeJS.ErrnoException) => {
+        if (err.code === 'ENOENT') {
+          reject(
+            new Error(
+              'Ruby is not installed or not in PATH. Install Ruby (e.g. rubyinstaller.org) and restart the app.'
+            )
+          );
+        } else {
+          reject(new Error(`Failed to spawn Ruby process: ${err.message}`));
+        }
+      });
+
+      rubyProcess.on('close', (code) => {
+        const lastLine =
+          stdoutOutput
+            .trim()
+            .split(/\r?\n/)
+            .filter((l) => l.length > 0)
+            .pop() || '';
+        try {
+          const parsed = JSON.parse(lastLine) as { success?: boolean; error?: string };
+          if (code === 0 && parsed.success === true) {
+            resolve();
+            return;
+          }
+          reject(new Error(parsed.error || stderrOutput || stdoutOutput || `Ruby exited with code ${code}`));
+        } catch {
+          reject(new Error(stderrOutput || stdoutOutput || `Ruby exited with code ${code}`));
+        }
+      });
+    });
   }
 
   async readTilesets(projectPath: string): Promise<TilesetData[]> {
