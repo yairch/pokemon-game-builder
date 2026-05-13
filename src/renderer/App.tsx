@@ -336,70 +336,78 @@ const App: React.FC = () => {
         </div>
       </header>
 
-      <main className="flex min-h-0 flex-1 flex-col px-3 pb-3 pt-2">
-        <SplitPane
-          orientation="horizontal"
-          storageKey="gw-workbench-chat"
-          defaultRatio={0.56}
-          minPrimaryPx={280}
-          minSecondaryPx={260}
-          primary={
-            <div className="flex min-h-0 min-w-0 flex-1 px-0.5">
-              <SplitPane
-                orientation="vertical"
-                storageKey="gw-tree-preview"
-                defaultRatio={0.34}
-                minPrimaryPx={140}
-                minSecondaryPx={200}
-                primary={
-                  projectPath ? (
-                    <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-2">
-                      {startMapIssue != null && startMapIssue !== 'pending' ? (
-                        <StartMapWarningBanner issue={startMapIssue} />
-                      ) : null}
-                      <div className="min-h-0 flex-1">
-                        <MapsTree
-                          roots={mapTreeRoots}
-                          selectedMapId={previewMapId}
-                          onSelectMap={setPreviewMapId}
-                          loading={treeBusy}
-                          resetKey={projectPath}
+      <main className="flex min-h-0 flex-1 flex-col">
+        <div className="flex min-h-0 flex-1 flex-col p-3">
+          <SplitPane
+            orientation="horizontal"
+            storageKey="gw-workbench-chat"
+            defaultRatio={0.56}
+            minPrimaryPx={280}
+            minSecondaryPx={260}
+            primary={
+              <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+                <SplitPane
+                  orientation="vertical"
+                  storageKey="gw-tree-preview"
+                  defaultRatio={0.34}
+                  minPrimaryPx={140}
+                  minSecondaryPx={200}
+                  primary={
+                    projectPath ? (
+                      <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-2 overflow-hidden">
+                        {startMapIssue != null && startMapIssue !== 'pending' ? (
+                          <StartMapWarningBanner issue={startMapIssue} />
+                        ) : null}
+                        <div className="min-h-0 flex-1 overflow-hidden">
+                          <MapsTree
+                            roots={mapTreeRoots}
+                            selectedMapId={previewMapId}
+                            onSelectMap={setPreviewMapId}
+                            loading={treeBusy}
+                            resetKey={projectPath}
+                            fillWorkbench
+                          />
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+                        <div className="flex min-h-[120px] flex-1 items-center justify-center rounded-xl border border-dashed border-zinc-300 bg-white/80 px-4 text-center text-[13px] text-zinc-500">
+                          Open a project to browse maps.
+                        </div>
+                      </div>
+                    )
+                  }
+                  secondary={
+                    <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+                      <div className="custom-scrollbar min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-y-contain">
+                        <MapPreview
+                          mapData={previewMap}
+                          projectPath={projectPath}
+                          previewLoading={previewLoading}
+                          previewLoadError={previewError}
+                          noMapsInProject={noMapsWhenReady}
+                          onInspectTileset={requestPreviewTilesetInspect}
                           fillWorkbench
                         />
                       </div>
                     </div>
-                  ) : (
-                    <div className="flex min-h-[120px] flex-1 items-center justify-center rounded-xl border border-dashed border-zinc-300 bg-white/80 px-4 text-center text-[13px] text-zinc-500">
-                      Open a project to browse maps.
-                    </div>
-                  )
-                }
-                secondary={
-                  <MapPreview
-                    mapData={previewMap}
-                    projectPath={projectPath}
-                    previewLoading={previewLoading}
-                    previewLoadError={previewError}
-                    noMapsInProject={noMapsWhenReady}
-                    onInspectTileset={requestPreviewTilesetInspect}
-                    fillWorkbench
-                  />
-                }
-              />
-            </div>
-          }
-          secondary={
-            <div className="flex min-h-0 min-w-0 flex-1 flex-col pl-2">
-              <ChatInterface
-                messages={messages}
-                onSendMessage={handleSendMessage}
-                onGenerateMap={handleGenerateMap}
-                isLoading={isLoading}
-                hasApiKey={hasApiKey}
-              />
-            </div>
-          }
-        />
+                  }
+                />
+              </div>
+            }
+            secondary={
+              <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+                <ChatInterface
+                  messages={messages}
+                  onSendMessage={handleSendMessage}
+                  onGenerateMap={handleGenerateMap}
+                  isLoading={isLoading}
+                  hasApiKey={hasApiKey}
+                />
+              </div>
+            }
+          />
+        </div>
       </main>
     </div>
   );

@@ -177,9 +177,11 @@ const MapsTree: React.FC<MapsTreeProps> = ({
     });
   };
 
+  const outerPad = fillWorkbench ? 'p-3' : 'p-4';
+
   return (
     <section
-      className={`rounded-xl border border-zinc-200/90 bg-white p-4 shadow-sm ring-1 ring-black/[0.03] ${fillWorkbench ? 'flex min-h-0 flex-1 flex-col' : ''}`}
+      className={`rounded-xl border border-zinc-200/90 bg-white shadow-sm ring-1 ring-black/[0.03] ${outerPad} ${fillWorkbench ? 'flex h-full min-h-0 flex-1 flex-col overflow-hidden' : ''}`}
     >
       <div className="mb-3 flex shrink-0 items-start justify-between gap-3">
         <div>
@@ -194,7 +196,7 @@ const MapsTree: React.FC<MapsTreeProps> = ({
         className={`overflow-hidden rounded-lg border border-zinc-200/80 bg-zinc-50/50 ${fillWorkbench ? 'flex min-h-0 flex-1 flex-col' : ''}`}
       >
         <div
-          className={`custom-scrollbar px-1 py-1.5 ${fillWorkbench ? 'min-h-0 flex-1 overflow-y-auto' : 'max-h-72 overflow-y-auto'}`}
+          className={`custom-scrollbar px-1 py-1.5 ${fillWorkbench ? 'min-h-0 flex-1 overflow-y-auto overflow-x-auto' : 'max-h-72 overflow-y-auto overflow-x-auto'}`}
         >
           {loading && (
             <div className="flex items-center gap-2 px-3 py-8 text-sm text-zinc-500" role="status">
