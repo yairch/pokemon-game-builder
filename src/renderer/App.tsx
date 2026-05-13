@@ -9,6 +9,7 @@ import type { MapData, MapInfosReadData, SystemReadData } from '../shared/types'
 import { buildMapInfosTree, getDefaultPreviewMapId } from '../shared/mapInfosTree';
 import { mapReadDataToMapData } from '../shared/mapReadToMapData';
 import { computeStartMapIntegrityIssue } from '../shared/startMapIntegrity';
+import { applyHierarchyMove, type HierarchyMoveIntent } from '../shared/mapInfosHierarchyMove';
 import StartMapWarningBanner from './components/StartMapWarningBanner';
 
 interface Message {
@@ -34,6 +35,8 @@ const App: React.FC = () => {
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewError, setPreviewError] = useState<string | null>(null);
   const [inspectFromPreview, setInspectFromPreview] = useState<{ mapId: number; nonce: number } | null>(null);
+  const [reorderBusy, setReorderBusy] = useState(false);
+  const [reorderError, setReorderError] = useState<string | null>(null);
 
   const reloadProjectMapsMeta = useCallback(async () => {
     if (!projectPath) return;
@@ -161,6 +164,29 @@ const App: React.FC = () => {
   );
 
   const mapTreeRoots = useMemo(() => buildMapInfosTree(mapInfos ?? {}), [mapInfos]);
+
+  const handleMoveMap = useCallback(
+    async (intent: HierarchyMoveIntent) => {
+      if (!projectPath || !mapInfos) return;
+      const rows = applyHierarchyMove(mapInfos, intent.draggedId, intent.targetId, intent.position);
+      if (!rows) return;
+      setReorderBusy(true);
+      setReorderError(null);
+      try {
+        const result = await bridge.invoke('apply-map-infos-tree', { projectPath, rows });
+        if (result?.success && result.data) {
+          setMapInfos(result.data as MapInfosReadData);
+        } else {
+          setReorderError(result?.error || 'Failed to apply hierarchy change.');
+        }
+      } catch (e) {
+        setReorderError(e instanceof Error ? e.message : 'Failed to apply hierarchy change.');
+      } finally {
+        setReorderBusy(false);
+      }
+    },
+    [projectPath, mapInfos]
+  );
 
   useEffect(() => {
     if (!projectPath || systemPhase !== 'ok' || !systemData) {
@@ -358,6 +384,14 @@ const App: React.FC = () => {
                         {startMapIssue != null && startMapIssue !== 'pending' ? (
                           <StartMapWarningBanner issue={startMapIssue} />
                         ) : null}
+                        {reorderError ? (
+                          <div
+                            role="alert"
+                            className="shrink-0 rounded-md border border-rose-200 bg-rose-50 px-2.5 py-2 text-[12px] text-rose-900"
+                          >
+                            <span className="font-medium">Reorder failed:</span> {reorderError}
+                          </div>
+                        ) : null}
                         <div className="min-h-0 flex-1 overflow-hidden">
                           <MapsTree
                             roots={mapTreeRoots}
@@ -366,6 +400,8 @@ const App: React.FC = () => {
                             loading={treeBusy}
                             resetKey={projectPath}
                             fillWorkbench
+                            onMoveMap={handleMoveMap}
+                            reorderDisabled={reorderBusy}
                           />
                         </div>
                       </div>
