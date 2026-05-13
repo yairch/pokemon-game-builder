@@ -9,6 +9,8 @@ isProject: false
 
 This document **extends** the technical MVP phases in [`mvp_implementation_plan_a41c92e4.plan.md`](./mvp_implementation_plan_a41c92e4.plan.md). That plan owns **Ruby bridge, AI, validation, and data pipelines**. This plan owns **layout, preview parity, and editor UX** toward a **modern, AI-integrated game builder** that eventually reduces or removes the need to open RPG Maker XP.
 
+**Map tree editing (GW+)** is specified in [`map_worktree_editor_design.plan.md`](./map_worktree_editor_design.plan.md) (drag-drop hierarchy, delete + integrity scan, proactive `start_map_id` warning); main-plan todo **`pr-gw-map-tree`**.
+
 ## North star
 
 - **Short term:** Trust the in-app map preview (grid, layers, events, tileset context) for iteration; open RPG Maker XP only when needed.
@@ -104,6 +106,7 @@ Goal: replace the single scrolling left column with a **multi-pane, modern workb
 **Behavior**
 
 - **Map preview source = map tree selection.** The preview never says “No map generated yet” when a project is loaded; it loads the selected tree map via `read-map` and renders it.
+- **Start map integrity:** When `System.rxdata` has **no valid `start_map_id`** for the loaded maps, show a **persistent warning** near the Map Workbench / tree (details and delete rules in [`map_worktree_editor_design.plan.md`](./map_worktree_editor_design.plan.md)).
 - **Template map = configuration**, separate from preview. Affects only generation flows (test buttons, chat generation).
 - **After a successful generation:** map tree refreshes, the new map is auto-selected, and the preview switches to it.
 - **Instructions** are not a pinned card; pressing the **info icon** opens a small popover/bubble with the same content. Closing returns the user to the workbench unobstructed.
@@ -139,16 +142,16 @@ Goal: replace the single scrolling left column with a **multi-pane, modern workb
 - Full event command authoring, map properties, encounter tables, **playtest** hook or export.
 - Plugin/script surface area — out of scope for this MVP roadmap except as hooks.
 
-## Right-click & context menus (planned)
+## Right-click & context menus
 
-| Surface | Future action (examples) |
+| Surface | Action (examples) |
 |--------|---------------------------|
-| Map canvas | Paste, fill, “Edit event”, “Go to tile in palette” |
-| Map tree | Rename, delete (with confirm), duplicate, set parent folder |
-| Event marker | Edit event, delete, copy event id |
-| Palette tile | Set as current tile, copy numeric id |
+| Map canvas | Paste, fill, “Edit event”, “Go to tile in palette” *(future — G2)* |
+| **Map tree** | **Delete** (destructive confirm + integrity preflight per [`map_worktree_editor_design.plan.md`](./map_worktree_editor_design.plan.md)); rename / duplicate / other actions *future* |
+| Event marker | Edit event, delete, copy event id *(future)* |
+| Palette tile | Set as current tile, copy numeric id *(future)* |
 
-**MVP:** No context menus required; reserve hit-testing seams in components so G2 can attach handlers without layout rewrites.
+**MVP note:** Canvas/palette/event menus remain future work. **Tree:** right-click **Delete** + **`@dnd-kit` reorder/reparent** are in scope for **`pr-gw-map-tree`** (GW+); see design doc — not required for GW layout-only PR unless intentionally batched.
 
 ## Traceability to main MVP plan
 
@@ -156,6 +159,7 @@ Goal: replace the single scrolling left column with a **multi-pane, modern workb
 |----------------|---------------|
 | PR 1.1 Canvas preview (base merged) | G0: PR-G0-1 (tree + read-map + inspector) → PR-G0-2 (markers) → PR-G0-3 (layer strip + grid) |
 | GUI workbench rework | GW: top bar config, draggable Workbench / Chat split, instructions popover |
+| **`pr-gw-map-tree`** Interactive map tree | [`map_worktree_editor_design.plan.md`](./map_worktree_editor_design.plan.md): `@dnd-kit`, MapInfos write, delete scan, System / start-map banner |
 | PR 1.2 Vision | Palette + preview stay visually aligned |
 | Phase 3 Events | G0 markers → G1/G2 full event UX |
 | Phase 4 Validation | G3 warnings surfaced in workbench status bar |
