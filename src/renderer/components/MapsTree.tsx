@@ -36,10 +36,15 @@ interface MapsTreeProps {
   reorderDisabled?: boolean;
 }
 
-interface DropTargetState {
-  id: number;
-  position: DropPosition;
-}
+/**
+ * Where a drop will land. `row` targets a specific map at one of three bands;
+ * `tree-end` is the virtual zone at the bottom of the tree that always means
+ * "append at root level after the last root sibling" — the only way to drag
+ * an item out of a folder that's the last entry in the tree.
+ */
+type DropTargetState =
+  | { kind: 'row'; id: number; position: DropPosition }
+  | { kind: 'tree-end'; lastRootId: number };
 
 interface TreeDndCtx {
   activeId: number | null;
@@ -138,7 +143,10 @@ function MapsTreeBranch({
   const mapIdLabel = `Map${String(info.id).padStart(3, '0')}`;
   const name = String(info.name || 'Untitled map');
 
-  const pad = 6 + depth * 12;
+  // Bigger per-level indent so the hierarchy reads at a glance and the user has
+  // ample horizontal room to aim a drop "in" or "out" of a folder by hovering
+  // a row at a different depth.
+  const pad = 8 + depth * 18;
 
   const dnd = React.useContext(TreeDndContext);
   const isDraggingThis = dnd.activeId === info.id;
@@ -165,12 +173,15 @@ function MapsTreeBranch({
     setDropRef(el);
   };
 
-  const showBeforeLine =
-    dnd.activeId != null && dnd.dropTarget?.id === info.id && dnd.dropTarget.position === 'before';
-  const showAfterLine =
-    dnd.activeId != null && dnd.dropTarget?.id === info.id && dnd.dropTarget.position === 'after';
-  const showInsideRing =
-    dnd.activeId != null && dnd.dropTarget?.id === info.id && dnd.dropTarget.position === 'inside';
+  const dt = dnd.dropTarget;
+  const isRowTarget = dnd.activeId != null && dt?.kind === 'row' && dt.id === info.id;
+  const showBeforeLine = isRowTarget && dt!.position === 'before';
+  const showAfterLine = isRowTarget && dt!.position === 'after';
+  const showInsideRing = isRowTarget && dt!.position === 'inside';
+  // Indent the drop line so it starts under the row's icon/text area. The depth-aware
+  // left offset (pad + chevron column) communicates "this drop lands at this depth"
+  // — critical for disambiguating "after last child in folder" from "before next root sibling".
+  const dropLineLeft = pad + 28;
 
   return (
     <li
@@ -194,13 +205,15 @@ function MapsTreeBranch({
       >
         {showBeforeLine && (
           <div
-            className="pointer-events-none absolute left-1 right-1 -top-0.5 h-0.5 rounded-full bg-blue-500 shadow-[0_0_0_2px_rgba(59,130,246,0.25)]"
+            className="pointer-events-none absolute right-1 -top-0.5 h-0.5 rounded-full bg-blue-500 shadow-[0_0_0_2px_rgba(59,130,246,0.25)]"
+            style={{ left: dropLineLeft }}
             aria-hidden
           />
         )}
         {showAfterLine && (
           <div
-            className="pointer-events-none absolute left-1 right-1 -bottom-0.5 h-0.5 rounded-full bg-blue-500 shadow-[0_0_0_2px_rgba(59,130,246,0.25)]"
+            className="pointer-events-none absolute right-1 -bottom-0.5 h-0.5 rounded-full bg-blue-500 shadow-[0_0_0_2px_rgba(59,130,246,0.25)]"
+            style={{ left: dropLineLeft }}
             aria-hidden
           />
         )}
@@ -264,7 +277,18 @@ function MapsTreeBranch({
       </div>
 
       {hasChildren && expanded && (
-        <ul role="group" className="relative m-0 list-none p-0">
+        // pb-2 gives a clear vertical buffer between the last nested child and
+        // the next sibling at the parent's level — so the "after last child
+        // (inside folder)" and "before next root sibling (out of folder)" drop
+        // lines aren't visually stacked 2 px apart.
+        <ul role="group" className="relative m-0 list-none space-y-0.5 p-0 pb-2 pt-0.5">
+          {/* Indent guide: subtle vertical line aligned with the parent's chevron column,
+              so nesting depth is visually obvious and the user can aim drops at any depth. */}
+          <span
+            className="pointer-events-none absolute bottom-2 top-0 w-px bg-zinc-200"
+            style={{ left: `${pad + 14}px` }}
+            aria-hidden
+          />
           {children.map((c) => (
             <MapsTreeBranch
               key={c.info.id}
@@ -277,6 +301,45 @@ function MapsTreeBranch({
             />
           ))}
         </ul>
+      )}
+    </li>
+  );
+}
+
+/**
+ * A virtual drop target at the bottom of the root list, always at root depth.
+ * Lets the user drop a map "outside" a folder when the folder is the last entry
+ * in the tree — otherwise there's no shallower row below the folder's children
+ * to aim for. Resolves to `{ targetId: lastRoot, position: 'after' }` on drop.
+ */
+function EndOfRootDropZone({
+  enabled,
+  isActive,
+}: {
+  enabled: boolean;
+  isActive: boolean;
+}) {
+  const { setNodeRef } = useDroppable({
+    id: 'drop-tree-end',
+    data: { type: 'tree-end' },
+    disabled: !enabled,
+  });
+  if (!enabled) return null;
+  return (
+    <li
+      ref={setNodeRef}
+      role="presentation"
+      aria-hidden
+      className="relative list-none"
+    >
+      <div className="min-h-8 w-full" />
+      {isActive && (
+        <div
+          className="pointer-events-none absolute top-1 h-0.5 rounded-full bg-blue-500 shadow-[0_0_0_2px_rgba(59,130,246,0.25)]"
+          // Align with root-level row content (pad 8 + chevron column 28 = 36).
+          style={{ left: 36, right: 4 }}
+          aria-hidden
+        />
       )}
     </li>
   );
@@ -354,17 +417,40 @@ const MapsTree: React.FC<MapsTreeProps> = ({
   // ratio is only recomputed at row-boundary crossings — so the band can never resolve
   // to "inside" because the cursor at a boundary always has ratio ≈ 0 or 1.
   const handleDragMove = (event: DragMoveEvent) => {
-    const overData = event.over?.data.current as { mapId?: number } | undefined;
+    const overData = event.over?.data.current as
+      | { mapId?: number; type?: string }
+      | undefined;
     const activeData = event.active.data.current as { mapId?: number } | undefined;
-    const targetId = overData?.mapId;
     const draggedId = activeData?.mapId;
+    if (draggedId == null) return;
+
+    // Tree-end virtual zone: always resolves to "after the last root sibling at root level".
+    if (overData?.type === 'tree-end') {
+      const lastRoot = roots[roots.length - 1];
+      if (
+        lastRoot &&
+        lastRoot.info.id !== draggedId &&
+        !draggedSubtree.has(lastRoot.info.id)
+      ) {
+        setDropTarget((prev) => {
+          const next: DropTargetState = { kind: 'tree-end', lastRootId: lastRoot.info.id };
+          if (prev && prev.kind === 'tree-end' && prev.lastRootId === next.lastRootId) {
+            return prev;
+          }
+          dropTargetRef.current = next;
+          return next;
+        });
+      }
+      return;
+    }
+
+    const targetId = overData?.mapId;
     // Sticky behavior: when the cursor crosses an area without a valid drop target
     // (e.g. over the dragged row's own slot, the gap between rows, or outside the tree),
     // we leave the previously-resolved dropTarget in place. The user keeps their visual
     // highlight and can release confidently. Cancel still clears via onDragCancel.
     if (
       targetId == null ||
-      draggedId == null ||
       targetId === draggedId ||
       draggedSubtree.has(targetId)
     ) {
@@ -393,9 +479,35 @@ const MapsTree: React.FC<MapsTreeProps> = ({
     else if (ratio > 0.8) position = 'after';
     else position = 'inside';
 
+    // Disambiguation: when the target is an EXPANDED folder, the bottom 20% of its
+    // row sits at the same vertical area as the top of its first visible child —
+    // and "after folder at root level" is already reachable via the next sibling's
+    // `before` zone or the EndOfRootDropZone. So we remap `after` → `inside` for
+    // expanded folders, leaving only one unambiguous intent for each row band:
+    //   • `before`  → sibling slot above the folder
+    //   • `inside`  → append to folder's children (also the visual the user expects
+    //                 when hovering the folder body)
+    //   • `after`   → still works on COLLAPSED folders and on non-folder rows
+    const targetNode = findNodeById(roots, targetId);
+    if (
+      position === 'after' &&
+      targetNode &&
+      targetNode.children.length > 0 &&
+      expandedIds.has(targetId)
+    ) {
+      position = 'inside';
+    }
+
     setDropTarget((prev) => {
-      const next =
-        prev && prev.id === targetId && prev.position === position ? prev : { id: targetId, position };
+      const next: DropTargetState = { kind: 'row', id: targetId, position };
+      if (
+        prev &&
+        prev.kind === 'row' &&
+        prev.id === targetId &&
+        prev.position === position
+      ) {
+        return prev;
+      }
       dropTargetRef.current = next;
       return next;
     });
@@ -414,6 +526,11 @@ const MapsTree: React.FC<MapsTreeProps> = ({
     const target = dropTargetRef.current;
     resetDrag();
     if (draggedId == null || !target) return;
+    if (target.kind === 'tree-end') {
+      if (draggedSubtree.has(target.lastRootId) || target.lastRootId === draggedId) return;
+      onMoveMap?.({ draggedId, targetId: target.lastRootId, position: 'after' });
+      return;
+    }
     if (draggedSubtree.has(target.id)) return;
     onMoveMap?.({ draggedId, targetId: target.id, position: target.position });
   };
@@ -499,7 +616,7 @@ const MapsTree: React.FC<MapsTreeProps> = ({
               onDragCancel={resetDrag}
             >
               <TreeDndContext.Provider value={dndCtxValue}>
-                <ul role="tree" aria-label="Maps in project" className="m-0 list-none p-0">
+                <ul role="tree" aria-label="Maps in project" className="m-0 list-none space-y-0.5 p-0">
                   {roots.map((r) => (
                     <MapsTreeBranch
                       key={r.info.id}
@@ -511,11 +628,23 @@ const MapsTree: React.FC<MapsTreeProps> = ({
                       onSelectMap={onSelectMap}
                     />
                   ))}
+                  <EndOfRootDropZone
+                    enabled={
+                      activeId !== null &&
+                      roots.length > 0 &&
+                      roots[roots.length - 1].info.id !== activeId &&
+                      !draggedSubtree.has(roots[roots.length - 1].info.id)
+                    }
+                    isActive={dropTarget?.kind === 'tree-end'}
+                  />
                 </ul>
               </TreeDndContext.Provider>
               <DragOverlay dropAnimation={null} modifiers={[snapCenterToCursor]}>
                 {activeNode ? (
-                  <div className="pointer-events-none flex items-center gap-2 rounded-md border border-blue-300 bg-white/95 px-2.5 py-1.5 shadow-lg ring-1 ring-blue-200">
+                  // Compact chip — bounded width keeps the geometric center close to the
+                  // visual center-of-mass so snapCenterToCursor lands the cursor on the
+                  // chip's middle, matching where the hit-test math evaluates.
+                  <div className="pointer-events-none flex w-max max-w-[14rem] items-center gap-2 rounded-lg border border-blue-300 bg-white/95 px-2.5 py-1.5 shadow-lg ring-1 ring-blue-200">
                     <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-blue-50 text-blue-700">
                       {activeNode.children.length > 0 ? (
                         <Folder className="h-3.5 w-3.5" strokeWidth={2} />
@@ -523,8 +652,8 @@ const MapsTree: React.FC<MapsTreeProps> = ({
                         <MapIcon className="h-3.5 w-3.5" strokeWidth={2} />
                       )}
                     </span>
-                    <span className="min-w-0">
-                      <span className="block max-w-[14rem] truncate text-[13px] font-medium leading-tight text-zinc-900">
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-[13px] font-medium leading-tight text-zinc-900">
                         {activeName ?? 'Untitled map'}
                       </span>
                       <span className="mt-0.5 block font-mono text-[11px] leading-none tabular-nums text-zinc-500">
