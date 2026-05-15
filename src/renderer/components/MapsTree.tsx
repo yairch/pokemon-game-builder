@@ -20,6 +20,7 @@ import {
 import { getEventCoordinates } from '@dnd-kit/utilities';
 import type { MapInfosTreeNode } from '../../shared/mapInfosTree';
 import type { DropPosition, HierarchyMoveIntent } from '../../shared/mapInfosHierarchyMove';
+import MapsTreeContextMenu from './MapsTreeContextMenu';
 
 interface MapsTreeProps {
   roots: MapInfosTreeNode[];
@@ -34,6 +35,12 @@ interface MapsTreeProps {
   onMoveMap?: (intent: HierarchyMoveIntent) => void;
   /** Disables drag interactions while a move is being persisted. */
   reorderDisabled?: boolean;
+  /**
+   * Fires when the user invokes Delete from the right-click context menu on a row.
+   * Non-destructive at this layer — parent (App.tsx) handles the modal flow (commit 7).
+   * When omitted, the context menu still renders but Delete is a no-op (the menu closes).
+   */
+  onDeleteMap?: (node: MapInfosTreeNode) => void;
 }
 
 /**
@@ -52,6 +59,8 @@ interface TreeDndCtx {
   reorderDisabled: boolean;
   /** True when a drag is in progress and this id is a descendant of the dragged map. */
   isInvalidTarget: (id: number) => boolean;
+  /** Open the right-click menu at viewport-relative (x, y) for `node`. */
+  openContextMenu: (node: MapInfosTreeNode, x: number, y: number) => void;
 }
 
 const TreeDndContext = React.createContext<TreeDndCtx>({
@@ -59,6 +68,7 @@ const TreeDndContext = React.createContext<TreeDndCtx>({
   dropTarget: null,
   reorderDisabled: false,
   isInvalidTarget: () => false,
+  openContextMenu: () => {},
 });
 
 function collectFolderIds(nodes: MapInfosTreeNode[]): number[] {
@@ -194,6 +204,14 @@ function MapsTreeBranch({
         ref={setRowRef}
         {...attributes}
         {...listeners}
+        // `onContextMenu` is independent of dnd-kit's pointer listeners (which gate on
+        // button === 0). Right-click opens the menu at the cursor and the native browser
+        // menu is suppressed so users don't see "Inspect / Save Image…" over a map row.
+        onContextMenu={(e) => {
+          e.preventDefault();
+          dnd.openContextMenu(node, e.clientX, e.clientY);
+        }}
+        data-testid={`maps-tree-row-${info.id}`}
         className={`group relative flex items-stretch rounded-lg transition-colors min-h-9 ${
           isDraggingThis ? 'opacity-40' : ''
         } ${
@@ -354,10 +372,15 @@ const MapsTree: React.FC<MapsTreeProps> = ({
   fillWorkbench = false,
   onMoveMap,
   reorderDisabled = false,
+  onDeleteMap,
 }) => {
   const [expandedIds, setExpandedIds] = useState<Set<number>>(() => new Set());
   const [activeId, setActiveId] = useState<number | null>(null);
   const [dropTarget, setDropTarget] = useState<DropTargetState | null>(null);
+  // Right-click menu state. `null` = closed. Setting it to a fresh `{x,y,node}` re-positions
+  // the menu when the user right-clicks another row (the menu's own listener calls onClose
+  // then the new contextmenu handler sets new state; React batches both into one update).
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; node: MapInfosTreeNode } | null>(null);
   // Mirror state to refs so handleDragEnd sees the most recent values even when
   // a pointermove → pointerup pair runs before React flushes a re-render.
   const activeIdRef = useRef<number | null>(null);
@@ -561,11 +584,16 @@ const MapsTree: React.FC<MapsTreeProps> = ({
     });
   };
 
+  const openContextMenu = (node: MapInfosTreeNode, x: number, y: number) => {
+    setContextMenu({ node, x, y });
+  };
+
   const dndCtxValue: TreeDndCtx = {
     activeId,
     dropTarget,
     reorderDisabled,
     isInvalidTarget,
+    openContextMenu,
   };
 
   const activeNode = activeId != null ? findNodeById(roots, activeId) : null;
@@ -667,6 +695,15 @@ const MapsTree: React.FC<MapsTreeProps> = ({
           )}
         </div>
       </div>
+      {contextMenu ? (
+        <MapsTreeContextMenu
+          x={contextMenu.x}
+          y={contextMenu.y}
+          node={contextMenu.node}
+          onClose={() => setContextMenu(null)}
+          onDelete={(node) => onDeleteMap?.(node)}
+        />
+      ) : null}
     </section>
   );
 };

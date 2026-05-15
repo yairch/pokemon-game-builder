@@ -402,6 +402,14 @@ const App: React.FC = () => {
                             fillWorkbench
                             onMoveMap={handleMoveMap}
                             reorderDisabled={reorderBusy}
+                            onDeleteMap={(node) => {
+                              // Commit 7 replaces this with the preflight + modal flow.
+                              // For now we surface the selected node so right-click → Delete
+                              // is observable end-to-end without performing destructive work.
+                              console.info(
+                                `[delete] requested for map ${node.info.id} (${node.info.name || 'Untitled'})`,
+                              );
+                            }}
                           />
                         </div>
                       </div>
