@@ -10,6 +10,12 @@ import { MapGenerator } from './map-generator';
 import { MapSpec, TilesetInspectorData, MapInfoHierarchyWriteRow } from '../shared/types';
 import { TileBlock, extractTileBlocks, extractTilePairs } from './tile-utils';
 import { handleChatMapPipeline } from './chat-map-pipeline';
+import {
+  runDeletePreflight,
+  type DeletePreflightDeps,
+  type DeletePreflightProgress,
+  type DeletePreflightResult,
+} from './delete-preflight';
 import * as path from 'path';
 import { pathToFileURL } from 'url';
 import * as fs from 'fs-extra';
@@ -444,6 +450,52 @@ export async function handleDeleteMaps(projectPath: string, payload: DeleteMapsP
     return { success: true, data: { result, mapInfos, system } };
   } catch (error: any) {
     return { success: false, error: error.message || 'Failed to delete maps.' };
+  }
+}
+
+/**
+ * Run the delete preflight pipeline (system check → map events → scripts) and return the
+ * aggregated result. The IPC layer wraps `onProgress` so progress events fan out via
+ * `webContents.send`; the REST layer stores progress in a job table keyed by `jobId` for
+ * polling. Both paths converge on the same `DeletePreflightResult`.
+ *
+ * Deps default to the live `mapGenerator`; tests inject mocks via `runDeletePreflight`
+ * directly (no need to test argument-wiring through this thin handler).
+ */
+export interface DeletePreflightOptions {
+  onProgress?: (p: DeletePreflightProgress) => void;
+}
+
+export async function handleDeletePreflight(
+  projectPath: string,
+  ids: number[],
+  options: DeletePreflightOptions = {}
+): Promise<{ success: boolean; data?: DeletePreflightResult; error?: string }> {
+  if (!projectPath) return { success: false, error: 'Project path is required.' };
+  if (!Array.isArray(ids) || ids.length === 0) {
+    return { success: false, error: 'ids must be a non-empty array of positive integers.' };
+  }
+  for (const id of ids) {
+    if (!Number.isFinite(id) || id < 1) {
+      return { success: false, error: `Invalid id ${id} in ids (must be a positive integer).` };
+    }
+  }
+  const deps: DeletePreflightDeps = {
+    readMapInfos: (p) => mapGenerator.readMapInfos(p),
+    readSystem: (p) => mapGenerator.readSystem(p),
+    readMap: (p, id) => mapGenerator.readMap(p, id),
+    scanScriptsForMapIds: (p, payload) => mapGenerator.scanScriptsForMapIds(p, payload),
+  };
+  try {
+    const result = await runDeletePreflight({
+      projectPath,
+      ids,
+      deps,
+      onProgress: options.onProgress,
+    });
+    return { success: true, data: result };
+  } catch (error: any) {
+    return { success: false, error: error.message || 'Delete preflight failed.' };
   }
 }
 
