@@ -22,61 +22,21 @@
 import type { MapInfosReadData, MapReadData, SystemReadData } from '../shared/types';
 import { pickEditMapIdAutoFix, simulateDelete } from '../shared/deleteIntegrity';
 import type { MapReference } from '../shared/deleteIntegrity';
+import type {
+  DeletePreflightProgress,
+  DeletePreflightResult,
+  DeletePreflightBlocker,
+  DeletePreflightWarning,
+} from '../shared/deletePreflightTypes';
 import { MAP_ID_IDIOMS, extractMapReferencesFromEvents } from '../shared/mapEventReferences';
 import type { ScriptScanResult } from './map-generator';
 
-// ---------------------------------------------------------------------------
-// Public types — also consumed by the renderer modal (commit 7).
-// ---------------------------------------------------------------------------
-
-/** Stepped progress event. Emitted at the start of each stage and once per completed map read. */
-export type DeletePreflightProgress =
-  | { step: 'system' }
-  | { step: 'map-events'; current: number; total: number }
-  | { step: 'scripts' }
-  | { step: 'done' };
-
-/** Conditions that prevent confirm. Modal disables the destructive button until empty. */
-export type DeletePreflightBlocker =
-  | { kind: 'start-map-invalidated'; oldStartMapId: number }
-  | { kind: 'references-found'; refCount: number };
-
-/** Non-blocking notices. */
-export type DeletePreflightWarning =
-  | { kind: 'delete-to-zero' }
-  | { kind: 'edit-map-changed'; from: number; to: number }
-  | { kind: 'script-section-errors'; count: number };
-
-export interface DeletePreflightResult {
-  /** Seed ids the user selected (echoed for traceability). */
-  requestedIds: number[];
-  /** Expanded delete set: seeds + every descendant by `parent_id` (from `simulateDelete`). */
-  deletedIds: number[];
-  /** Post-delete survivor ids in MapInfos preorder. */
-  survivorIds: number[];
-  /**
-   * What `start_map_id` will be persisted on confirm:
-   *   - if `system.startMapId` survives → that value;
-   *   - else if survivors remain → 0 until the user picks one (`startMapPickRequired`);
-   *   - else (delete-to-zero) → 0.
-   */
-  newStartMapId: number;
-  /** Per-policy auto-fix of `edit_map_id` (see `pickEditMapIdAutoFix`). */
-  newEditMapId: number;
-  /** True when the modal must block confirm until the user picks a new start map. */
-  startMapPickRequired: boolean;
-  /** All references found in surviving maps' events + scripts. */
-  references: MapReference[];
-  blockers: DeletePreflightBlocker[];
-  warnings: DeletePreflightWarning[];
-  scanCounts: {
-    mapsScanned: number;
-    mapsTotal: number;
-    mapsFailed: number;
-    scriptsScanned: boolean;
-    sectionErrors: number;
-  };
-}
+export type {
+  DeletePreflightProgress,
+  DeletePreflightBlocker,
+  DeletePreflightWarning,
+  DeletePreflightResult,
+} from '../shared/deletePreflightTypes';
 
 export interface DeletePreflightDeps {
   readMapInfos: (projectPath: string) => Promise<MapInfosReadData>;

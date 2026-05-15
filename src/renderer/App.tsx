@@ -11,6 +11,8 @@ import { mapReadDataToMapData } from '../shared/mapReadToMapData';
 import { computeStartMapIntegrityIssue } from '../shared/startMapIntegrity';
 import { applyHierarchyMove, type HierarchyMoveIntent } from '../shared/mapInfosHierarchyMove';
 import StartMapWarningBanner from './components/StartMapWarningBanner';
+import DeleteMapModal from './components/DeleteMapModal';
+import type { MapInfosTreeNode } from '../shared/mapInfosTree';
 
 interface Message {
   role: 'user' | 'assistant';
@@ -37,6 +39,7 @@ const App: React.FC = () => {
   const [inspectFromPreview, setInspectFromPreview] = useState<{ mapId: number; nonce: number } | null>(null);
   const [reorderBusy, setReorderBusy] = useState(false);
   const [reorderError, setReorderError] = useState<string | null>(null);
+  const [deleteTargetNode, setDeleteTargetNode] = useState<MapInfosTreeNode | null>(null);
 
   const reloadProjectMapsMeta = useCallback(async () => {
     if (!projectPath) return;
@@ -164,6 +167,21 @@ const App: React.FC = () => {
   );
 
   const mapTreeRoots = useMemo(() => buildMapInfosTree(mapInfos ?? {}), [mapInfos]);
+
+  const handleMapsDeleted = useCallback(
+    async (next: { mapInfos: MapInfosReadData | null; system: SystemReadData | null }) => {
+      setDeleteTargetNode(null);
+      if (next.mapInfos != null) setMapInfos(next.mapInfos);
+      if (next.system != null) {
+        setSystemData(next.system);
+        setSystemPhase('ok');
+      }
+      if (next.mapInfos == null || next.system == null) {
+        await reloadProjectMapsMeta();
+      }
+    },
+    [reloadProjectMapsMeta],
+  );
 
   const handleMoveMap = useCallback(
     async (intent: HierarchyMoveIntent) => {
@@ -402,14 +420,7 @@ const App: React.FC = () => {
                             fillWorkbench
                             onMoveMap={handleMoveMap}
                             reorderDisabled={reorderBusy}
-                            onDeleteMap={(node) => {
-                              // Commit 7 replaces this with the preflight + modal flow.
-                              // For now we surface the selected node so right-click → Delete
-                              // is observable end-to-end without performing destructive work.
-                              console.info(
-                                `[delete] requested for map ${node.info.id} (${node.info.name || 'Untitled'})`,
-                              );
-                            }}
+                            onDeleteMap={(node) => setDeleteTargetNode(node)}
                           />
                         </div>
                       </div>
@@ -453,6 +464,13 @@ const App: React.FC = () => {
           />
         </div>
       </main>
+      <DeleteMapModal
+        node={deleteTargetNode}
+        projectPath={projectPath}
+        mapInfos={mapInfos}
+        onClose={() => setDeleteTargetNode(null)}
+        onDeleted={handleMapsDeleted}
+      />
     </div>
   );
 };

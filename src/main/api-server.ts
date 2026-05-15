@@ -10,7 +10,7 @@ import * as h from './handlers';
 import type {
   DeletePreflightProgress,
   DeletePreflightResult,
-} from './delete-preflight';
+} from '../shared/deletePreflightTypes';
 
 const api = express();
 api.use(cors());

@@ -100,4 +100,71 @@ describe('bridge HTTP fallback URLs', () => {
   it('throws on unknown channel', async () => {
     await expect(bridge.invoke('nonexistent-channel')).rejects.toThrow('Unknown channel');
   });
+
+  it('delete-maps POSTs JSON body to /delete-maps', async () => {
+    const body = {
+      projectPath: '/proj',
+      payload: { ids: [1, 2], newStartMapId: 3, newEditMapId: 3 },
+    };
+    await bridge.invoke('delete-maps', body);
+    expect(fetch).toHaveBeenCalledWith(`${API_BASE}/delete-maps`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+  });
+
+  it('runDeletePreflight polls delete-preflight-status until done (HTTP)', async () => {
+    vi.resetModules();
+    const win = globalThis as unknown as { window?: Window & { electron?: unknown } };
+    if (win.window && 'electron' in win.window) {
+      delete win.window.electron;
+    }
+
+    const minimalResult = {
+      requestedIds: [5],
+      deletedIds: [5],
+      survivorIds: [],
+      newStartMapId: 0,
+      newEditMapId: 0,
+      startMapPickRequired: false,
+      references: [],
+      blockers: [],
+      warnings: [],
+      scanCounts: {
+        mapsScanned: 0,
+        mapsTotal: 0,
+        mapsFailed: 0,
+        scriptsScanned: false,
+        sectionErrors: 0,
+      },
+    };
+
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        json: async () => ({ success: true, jobId: 'job-test-1' }),
+      })
+      .mockResolvedValueOnce({
+        json: async () => ({
+          success: true,
+          progress: { step: 'scripts' as const },
+          done: true,
+          result: minimalResult,
+          error: null,
+        }),
+      });
+
+    vi.stubGlobal('fetch', fetchMock);
+
+    const { bridge: freshBridge } = await import('../services/bridge');
+    const out = await freshBridge.runDeletePreflight('/tmp/proj', [5]);
+
+    expect(out.success).toBe(true);
+    expect(out.data).toEqual(minimalResult);
+    expect(fetchMock).toHaveBeenCalledWith(`${API_BASE}/delete-preflight`, expect.any(Object));
+    expect(fetchMock.mock.calls[1]?.[0]).toBe(
+      `${API_BASE}/delete-preflight-status?jobId=${encodeURIComponent('job-test-1')}`,
+    );
+  });
 });
