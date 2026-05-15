@@ -648,6 +648,145 @@ rescue JSON::ParserError => e
   puts JSON.generate({ error: "Invalid JSON on stdin: #{e.message}" })
 end
 
+# Atomically delete a set of maps from a project.
+#
+# Pipeline:
+#   1. Validate args, locate MapInfos.rxdata and System.rxdata.
+#   2. PHASE 1 (backup) — make `.bak` copies of MapInfos.rxdata, System.rxdata,
+#      and every Map###.rxdata that will be removed. Backups stay on disk until
+#      the success path runs Phase 3.
+#   3. PHASE 2 (apply) — delete the ids from MapInfos, remove the Map###.rxdata
+#      files, write the new start_map_id / edit_map_id into System. All three
+#      Marshal-loaded objects are MUTATED in place so unrelated RPG::MapInfo /
+#      RPG::System fields are preserved on disk (do not rebuild objects).
+#   4. PHASE 3 (commit) — on success, delete the `.bak` files.
+#   5. On any exception during Phase 1 or 2: best-effort restore from `.bak`.
+#      A `.bak` is deleted iff its restore succeeded (then the original is
+#      byte-identical and the backup is just noise). A `.bak` is RETAINED
+#      iff its restore failed, so the user has a manual recovery path for
+#      that specific file (the on-disk original may be in an intermediate
+#      state). No user-facing "restore from backup" copy is implied — this
+#      is internal safety only (see design plan § 7).
+#
+# CLI args  : ARGV[0] = project root.
+# stdin JSON: { "ids": [Number, ...], "newStartMapId": Number, "newEditMapId": Number }
+def delete_maps(project_root)
+  raw_payload = STDIN.read.to_s
+  payload = JSON.parse(raw_payload)
+  unless payload.is_a?(Hash)
+    puts JSON.generate({ error: 'Expected JSON object { ids, newStartMapId, newEditMapId }' })
+    return
+  end
+
+  ids = Array(payload['ids']).map { |v| v.to_i }.select { |v| v > 0 }.uniq
+  new_start = (payload['newStartMapId'] || 0).to_i
+  new_edit = (payload['newEditMapId'] || 0).to_i
+
+  if ids.empty?
+    puts JSON.generate({ error: 'No valid ids in payload (expected positive integers).' })
+    return
+  end
+
+  data_dir = File.join(project_root, 'Data')
+  map_infos_path = File.join(data_dir, 'MapInfos.rxdata')
+  system_path = File.join(data_dir, 'System.rxdata')
+
+  unless File.exist?(map_infos_path)
+    puts JSON.generate({ error: "MapInfos.rxdata not found at #{map_infos_path}" })
+    return
+  end
+  unless File.exist?(system_path)
+    puts JSON.generate({ error: "System.rxdata not found at #{system_path}" })
+    return
+  end
+
+  map_paths_to_delete = ids.each_with_object([]) do |id, acc|
+    p = File.join(data_dir, "Map#{format('%03d', id)}.rxdata")
+    acc << p if File.exist?(p)
+  end
+
+  # `backups` is the rollback ledger: each [original_path, bak_path] is added the
+  # moment the .bak copy succeeds, so the rescue block can iterate it to restore.
+  backups = []
+
+  begin
+    # ---- Phase 1: take .bak copies in a fixed order ----
+    [map_infos_path, system_path, *map_paths_to_delete].each do |p|
+      bak = "#{p}.bak"
+      FileUtils.cp(p, bak)
+      backups << [p, bak]
+    end
+
+    # ---- Phase 2a: drop ids from MapInfos and write back ----
+    map_infos = normalize_map_infos_hash(File.open(map_infos_path, 'rb') { |f| Marshal.load(f) })
+    deleted_from_infos = 0
+    ids.each do |id|
+      deleted_from_infos += 1 if map_infos.delete(id)
+    end
+    File.open(map_infos_path, 'wb') { |f| Marshal.dump(map_infos, f) }
+
+    # ---- Phase 2b: delete Map###.rxdata files ----
+    map_files_deleted = 0
+    map_paths_to_delete.each do |p|
+      if File.exist?(p)
+        File.delete(p)
+        map_files_deleted += 1
+      end
+    end
+
+    # ---- Phase 2c: patch start_map_id + edit_map_id, preserve other System fields ----
+    system = File.open(system_path, 'rb') { |f| Marshal.load(f) }
+    # Mutate in-place so we don't lose magic_number, party_members, switches, audio, etc.
+    if system.respond_to?(:start_map_id=)
+      system.start_map_id = new_start
+    else
+      system.instance_variable_set(:@start_map_id, new_start)
+    end
+    if system.respond_to?(:edit_map_id=)
+      system.edit_map_id = new_edit
+    else
+      system.instance_variable_set(:@edit_map_id, new_edit)
+    end
+    File.open(system_path, 'wb') { |f| Marshal.dump(system, f) }
+
+    # ---- Phase 3: success path — clean up .bak files ----
+    backups.each { |_, bak| File.delete(bak) if File.exist?(bak) }
+
+    puts JSON.generate({
+      success: true,
+      deletedFromMapInfos: deleted_from_infos,
+      mapFilesDeleted: map_files_deleted,
+      newStartMapId: new_start,
+      newEditMapId: new_edit,
+      requestedIds: ids
+    })
+  rescue => e
+    # ---- Rescue path: best-effort restore, per-file .bak retention. ----
+    # For each backup: try to restore; on success delete the .bak (the original is
+    # now byte-identical, so the backup is just noise); on failure keep the .bak so
+    # the user has a manual recovery path for that specific file.
+    restore_errors = []
+    retained = []
+    backups.each do |orig, bak|
+      next unless File.exist?(bak)
+      begin
+        FileUtils.cp(bak, orig)
+        File.delete(bak)
+      rescue => rerr
+        restore_errors << "#{orig}: #{rerr.message}"
+        retained << bak
+      end
+    end
+    puts JSON.generate({
+      error: "delete_maps failed: #{e.message}",
+      restoreErrors: restore_errors,
+      backupsRetained: retained
+    })
+  end
+rescue JSON::ParserError => e
+  puts JSON.generate({ error: "Invalid JSON on stdin: #{e.message}" })
+end
+
 # ============================================================
 # READ FUNCTIONS - Return JSON to stdout
 # ============================================================
@@ -854,6 +993,8 @@ if __FILE__ == $0
     update_map_infos(ARGV[1], ARGV[2], ARGV[3])
   when 'write_map_infos_hierarchy'
     write_map_infos_hierarchy(ARGV[1])
+  when 'delete_maps'
+    delete_maps(ARGV[1])
   when 'clone_map'
     clone_map(ARGV[1], ARGV[2])
   when 'patch_map_data'

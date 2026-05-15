@@ -399,6 +399,54 @@ export async function handleApplyMapInfosTree(projectPath: string, rows: MapInfo
   }
 }
 
+/**
+ * Delete a set of map ids from a project: remove from MapInfos, delete Map###.rxdata, and
+ * patch System start_map_id / edit_map_id. TS callers must pre-compute the new start / edit
+ * map ids via `simulateDelete` + `pickEditMapIdAutoFix` (commit 1) and pass them in here —
+ * Ruby just applies. Atomicity ( `.bak` rollback on failure ) is handled in Ruby.
+ *
+ * Returns the refreshed `mapInfos` + `system` on success so the renderer can drop its old
+ * copy without a second round-trip.
+ */
+export interface DeleteMapsPayload {
+  ids: number[];
+  newStartMapId: number;
+  newEditMapId: number;
+}
+
+export async function handleDeleteMaps(projectPath: string, payload: DeleteMapsPayload) {
+  if (!projectPath) return { success: false, error: 'Project path is required.' };
+  if (!payload || typeof payload !== 'object') {
+    return { success: false, error: 'Payload must include ids, newStartMapId, newEditMapId.' };
+  }
+  if (!Array.isArray(payload.ids) || payload.ids.length === 0) {
+    return { success: false, error: 'ids must be a non-empty array of positive integers.' };
+  }
+  for (const id of payload.ids) {
+    if (!Number.isFinite(id) || id < 1) {
+      return { success: false, error: `Invalid id ${id} in payload (must be a positive integer).` };
+    }
+  }
+  if (!Number.isFinite(payload.newStartMapId) || payload.newStartMapId < 0) {
+    return { success: false, error: `Invalid newStartMapId ${payload.newStartMapId}.` };
+  }
+  if (!Number.isFinite(payload.newEditMapId) || payload.newEditMapId < 0) {
+    return { success: false, error: `Invalid newEditMapId ${payload.newEditMapId}.` };
+  }
+  try {
+    const result = await mapGenerator.deleteMaps(projectPath, payload);
+    // Refresh the renderer's view in one round-trip. Each call is independently fallible:
+    // if read-back fails, the delete still succeeded on disk — surface a partial response.
+    const [mapInfos, system] = await Promise.all([
+      mapGenerator.readMapInfos(projectPath).catch(() => null),
+      mapGenerator.readSystem(projectPath).catch(() => null),
+    ]);
+    return { success: true, data: { result, mapInfos, system } };
+  } catch (error: any) {
+    return { success: false, error: error.message || 'Failed to delete maps.' };
+  }
+}
+
 export async function handleReadTilesets(projectPath: string) {
   if (!projectPath) return { success: false, error: 'Project path is required.' };
   try { return { success: true, data: await mapGenerator.readTilesets(projectPath) }; }

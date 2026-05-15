@@ -678,6 +678,97 @@ export class MapGenerator {
     });
   }
 
+  /**
+   * Atomically delete a set of map ids from MapInfos.rxdata + Data/Map###.rxdata, and patch
+   * System.rxdata's start_map_id / edit_map_id to the provided values.
+   *
+   * The TS side computes the new start / edit values (see `simulateDelete` +
+   * `pickEditMapIdAutoFix` in `src/shared/deleteIntegrity.ts`) and passes them in; Ruby just
+   * applies. Ruby uses `.bak` rollback internally; on failure the original files are restored
+   * best-effort and the `.bak` files are retained on disk so the user has a manual recovery
+   * path. See `delete_maps` in marshal_handler.rb for the full pipeline.
+   *
+   * Resolves on `{ success: true }` from Ruby. Rejects with the Ruby `error` message
+   * (and any restore-error detail) on failure.
+   */
+  async deleteMaps(
+    projectPath: string,
+    payload: { ids: number[]; newStartMapId: number; newEditMapId: number }
+  ): Promise<{ deletedFromMapInfos: number; mapFilesDeleted: number; requestedIds: number[] }> {
+    return new Promise((resolve, reject) => {
+      const rubyProcess = spawn(this.rubyBinary, [this.rubyScriptPath, 'delete_maps', projectPath], {
+        stdio: ['pipe', 'pipe', 'pipe'],
+      });
+
+      rubyProcess.stdin.write(JSON.stringify(payload));
+      rubyProcess.stdin.end();
+
+      let stdoutOutput = '';
+      let stderrOutput = '';
+
+      rubyProcess.stdout.on('data', (data: Buffer) => {
+        stdoutOutput += data.toString();
+      });
+      rubyProcess.stderr.on('data', (data: Buffer) => {
+        stderrOutput += data.toString();
+      });
+
+      rubyProcess.on('error', (err: NodeJS.ErrnoException) => {
+        if (err.code === 'ENOENT') {
+          reject(
+            new Error(
+              'Ruby is not installed or not in PATH. Install Ruby (e.g. rubyinstaller.org) and restart the app.'
+            )
+          );
+        } else {
+          reject(new Error(`Failed to spawn Ruby process: ${err.message}`));
+        }
+      });
+
+      rubyProcess.on('close', (code) => {
+        // Ruby emits a single JSON line as its last stdout line; earlier lines (if any) are
+        // diagnostic logs. Match the pattern used by writeMapInfosHierarchy above.
+        const lastLine =
+          stdoutOutput
+            .trim()
+            .split(/\r?\n/)
+            .filter((l) => l.length > 0)
+            .pop() || '';
+        try {
+          const parsed = JSON.parse(lastLine) as {
+            success?: boolean;
+            error?: string;
+            deletedFromMapInfos?: number;
+            mapFilesDeleted?: number;
+            requestedIds?: number[];
+            restoreErrors?: string[];
+            backupsRetained?: string[];
+          };
+          if (code === 0 && parsed.success === true) {
+            resolve({
+              deletedFromMapInfos: parsed.deletedFromMapInfos ?? 0,
+              mapFilesDeleted: parsed.mapFilesDeleted ?? 0,
+              requestedIds: parsed.requestedIds ?? payload.ids,
+            });
+            return;
+          }
+          // Include restore detail in the rejection message when present, so handlers / UI
+          // can surface a clearer state ("we tried to roll back, here's what happened").
+          const base = parsed.error || stderrOutput || stdoutOutput || `Ruby exited with code ${code}`;
+          const restore = parsed.restoreErrors?.length
+            ? ` (restore errors: ${parsed.restoreErrors.join('; ')})`
+            : '';
+          const retained = parsed.backupsRetained?.length
+            ? ` (backups retained: ${parsed.backupsRetained.join(', ')})`
+            : '';
+          reject(new Error(`${base}${restore}${retained}`));
+        } catch {
+          reject(new Error(stderrOutput || stdoutOutput || `Ruby exited with code ${code}`));
+        }
+      });
+    });
+  }
+
   async readTilesets(projectPath: string): Promise<TilesetData[]> {
     const tilesetsPath = path.join(projectPath, 'Data', 'Tilesets.rxdata');
     return this.runRubyReadCommand<TilesetData[]>('read_tilesets', tilesetsPath);

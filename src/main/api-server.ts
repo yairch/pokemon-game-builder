@@ -46,6 +46,10 @@ api.post('/api/apply-map-infos-tree', async (req, res) => {
   const { projectPath, rows } = req.body ?? {};
   res.json(await h.handleApplyMapInfosTree(projectPath, rows));
 });
+api.post('/api/delete-maps', async (req, res) => {
+  const { projectPath, payload } = req.body ?? {};
+  res.json(await h.handleDeleteMaps(projectPath, payload));
+});
 api.get('/api/read-tilesets', async (req, res) => res.json(await h.handleReadTilesets(req.query.projectPath as string)));
 api.get('/api/read-system', async (req, res) => res.json(await h.handleReadSystem(req.query.projectPath as string)));
 api.get('/api/map-rxdata-exists', async (req, res) => {

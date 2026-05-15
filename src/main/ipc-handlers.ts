@@ -47,6 +47,9 @@ ipcMain.handle('read-map-infos', (_event, { projectPath }) => h.handleReadMapInf
 ipcMain.handle('apply-map-infos-tree', (_event, { projectPath, rows }) =>
   h.handleApplyMapInfosTree(projectPath, rows)
 );
+ipcMain.handle('delete-maps', (_event, { projectPath, payload }) =>
+  h.handleDeleteMaps(projectPath, payload)
+);
 ipcMain.handle('read-tilesets', (_event, { projectPath }) => h.handleReadTilesets(projectPath));
 ipcMain.handle('read-system', (_event, { projectPath }) => h.handleReadSystem(projectPath));
 ipcMain.handle('map-rxdata-exists', (_event, { projectPath, mapId }) =>
