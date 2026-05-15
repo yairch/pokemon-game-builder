@@ -2,6 +2,7 @@ require 'json'
 require 'fileutils'
 require 'base64'
 require 'set'
+require 'zlib'
 
 # Define RPG Maker XP classes so Marshal can load them
 module RPG
@@ -945,6 +946,112 @@ def read_tilesets(file_path)
   puts JSON.generate(result)
 end
 
+# Scan Scripts.rxdata for references to a candidate set of map ids.
+#
+# Scripts.rxdata format (RPG Maker XP / Pokemon Essentials):
+#   Marshal-dumped Array of [section_id, name, deflated_source_bytes]
+#   where deflated_source_bytes is `Zlib.deflate(source_text)`.
+#
+# Strategy (mirrors `scanTextForMapIds` in src/shared/mapEventReferences.ts so the
+# two scanners agree on confidence semantics):
+#   - For each section: inflate, walk line-by-line.
+#   - For each line: regex `\b\d+\b` against candidate ids.
+#   - Confidence is 'high' when any caller-provided idiom substring is present in
+#     the line (case-insensitive), else 'possible'. The idiom list comes from
+#     stdin so the canonical list lives in TS (MAP_ID_IDIOMS); we don't hardcode
+#     it twice.
+#
+# Encoding: inflated bytes get forced to UTF-8 with invalid sequences replaced,
+# so Windows-style encodings or stray bytes don't crash the regex. Section-level
+# decompression errors are reported per-section (not fatal) so a single corrupt
+# script section doesn't blind the whole scan.
+#
+# CLI args  : ARGV[0] = Scripts.rxdata path.
+# stdin JSON: { "candidateIds": [Number, ...], "idioms": [String, ...] }
+# Output    : { success: true, matches: [...], sectionErrors: [...] }
+#   - match  : { sectionIndex, sectionName, line, targetMapId, confidence, snippet }
+#   - error  : { sectionIndex, sectionName, error }
+def scan_scripts_for_map_ids(file_path)
+  raw_payload = STDIN.read.to_s
+  payload = JSON.parse(raw_payload)
+  unless payload.is_a?(Hash)
+    puts JSON.generate({ error: 'Expected JSON object { candidateIds, idioms }' })
+    return
+  end
+
+  candidate_ids = Array(payload['candidateIds']).map(&:to_i).select { |i| i > 0 }.to_set
+  idioms_lower = Array(payload['idioms']).map { |s| s.to_s.downcase }
+
+  if candidate_ids.empty?
+    puts JSON.generate({ success: true, matches: [], sectionErrors: [] })
+    return
+  end
+
+  unless File.exist?(file_path)
+    puts JSON.generate({ error: "Scripts.rxdata not found at #{file_path}" })
+    return
+  end
+
+  scripts = File.open(file_path, 'rb') { |f| Marshal.load(f) }
+  unless scripts.is_a?(Array)
+    puts JSON.generate({ error: 'Scripts.rxdata: expected an Array of [id, name, deflated]' })
+    return
+  end
+
+  matches = []
+  section_errors = []
+
+  scripts.each_with_index do |entry, idx|
+    next unless entry.is_a?(Array) && entry.length >= 3
+    section_name = (entry[1] || '').to_s
+    compressed = entry[2]
+    next unless compressed.is_a?(String) && !compressed.empty?
+
+    text = nil
+    begin
+      text = Zlib::Inflate.inflate(compressed)
+    rescue => e
+      section_errors << {
+        sectionIndex: idx,
+        sectionName: section_name,
+        error: "inflate failed: #{e.message}"
+      }
+      next
+    end
+
+    # Force UTF-8 with replacement so the regex + JSON output are safe on Windows
+    # (RMXP Ruby 1.8 era encoded scripts as Windows-1252 / Shift-JIS in some locales).
+    text = text.force_encoding(Encoding::UTF_8)
+    unless text.valid_encoding?
+      text = text.encode(Encoding::UTF_8, invalid: :replace, undef: :replace, replace: '?')
+    end
+
+    text.each_line.with_index do |line, line_idx|
+      idiom_hit = idioms_lower.any? { |idiom| !idiom.empty? && line.downcase.include?(idiom) }
+      confidence = idiom_hit ? 'high' : 'possible'
+
+      line.scan(/\b(\d+)\b/) do |captures|
+        n = captures[0].to_i
+        next unless candidate_ids.include?(n)
+        snippet = line.strip
+        snippet = snippet[0, 80] + '…' if snippet.length > 80
+        matches << {
+          sectionIndex: idx,
+          sectionName: section_name,
+          line: line_idx + 1,
+          targetMapId: n,
+          confidence: confidence,
+          snippet: snippet
+        }
+      end
+    end
+  end
+
+  puts JSON.generate({ success: true, matches: matches, sectionErrors: section_errors })
+rescue JSON::ParserError => e
+  puts JSON.generate({ error: "Invalid JSON on stdin: #{e.message}" })
+end
+
 def read_system(file_path)
   unless File.exist?(file_path)
     puts JSON.generate({ error: "File not found: #{file_path}" })
@@ -1011,6 +1118,8 @@ if __FILE__ == $0
     read_tilesets(ARGV[1])
   when 'read_system'
     read_system(ARGV[1])
+  when 'scan_scripts_for_map_ids'
+    scan_scripts_for_map_ids(ARGV[1])
   else
     puts JSON.generate({ error: "Unknown command: #{command}" })
   end

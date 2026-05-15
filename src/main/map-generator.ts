@@ -18,6 +18,32 @@ import {
   SystemReadData
 } from '../shared/types';
 
+/** One literal match in a Scripts.rxdata section text. See marshal_handler.rb `scan_scripts_for_map_ids`. */
+export interface ScriptScanMatch {
+  sectionIndex: number;
+  sectionName: string;
+  /** 1-based line within the decompressed section text. */
+  line: number;
+  /** The candidate id that this line literal matched. */
+  targetMapId: number;
+  /** 'high' = a `MAP_ID_IDIOMS` token appeared on the same line; 'possible' = bare numeric. */
+  confidence: 'high' | 'possible';
+  /** Trimmed line for the modal references list (capped). */
+  snippet: string;
+}
+
+/** A section that failed to inflate. Non-fatal — the scan continues for other sections. */
+export interface ScriptScanSectionError {
+  sectionIndex: number;
+  sectionName: string;
+  error: string;
+}
+
+export interface ScriptScanResult {
+  matches: ScriptScanMatch[];
+  sectionErrors: ScriptScanSectionError[];
+}
+
 export class MapGenerator {
   private rubyScriptPath: string;
   private rubyBinary: string;
@@ -762,6 +788,85 @@ export class MapGenerator {
             ? ` (backups retained: ${parsed.backupsRetained.join(', ')})`
             : '';
           reject(new Error(`${base}${restore}${retained}`));
+        } catch {
+          reject(new Error(stderrOutput || stdoutOutput || `Ruby exited with code ${code}`));
+        }
+      });
+    });
+  }
+
+  /**
+   * Scan Scripts.rxdata for literal integer references to any of `candidateIds`. Ruby owns
+   * inflate (zlib) + Marshal load; TS owns the candidate set + the idiom list (which lives
+   * in `src/shared/mapEventReferences.ts` as `MAP_ID_IDIOMS`, the single source of truth
+   * shared with the event-walk scanner in commit 2).
+   *
+   * Designed to be called by the preflight pipeline (commit 5) once per delete, with the
+   * full set of to-be-deleted ids. Returns matches (with confidence) plus any per-section
+   * inflate errors (rare but possible if Scripts.rxdata was hand-edited).
+   *
+   * Empty `candidateIds` short-circuits to an empty result without invoking Ruby's regex
+   * over megabytes of script text — a real optimization for "scan-then-no-op" flows.
+   */
+  async scanScriptsForMapIds(
+    projectPath: string,
+    payload: { candidateIds: number[]; idioms: ReadonlyArray<string> }
+  ): Promise<ScriptScanResult> {
+    if (!payload.candidateIds || payload.candidateIds.length === 0) {
+      return { matches: [], sectionErrors: [] };
+    }
+    const scriptsPath = path.join(projectPath, 'Data', 'Scripts.rxdata');
+
+    return new Promise((resolve, reject) => {
+      const rubyProcess = spawn(
+        this.rubyBinary,
+        [this.rubyScriptPath, 'scan_scripts_for_map_ids', scriptsPath],
+        { stdio: ['pipe', 'pipe', 'pipe'] }
+      );
+
+      rubyProcess.stdin.write(JSON.stringify(payload));
+      rubyProcess.stdin.end();
+
+      let stdoutOutput = '';
+      let stderrOutput = '';
+
+      rubyProcess.stdout.on('data', (data: Buffer) => {
+        stdoutOutput += data.toString();
+      });
+      rubyProcess.stderr.on('data', (data: Buffer) => {
+        stderrOutput += data.toString();
+      });
+
+      rubyProcess.on('error', (err: NodeJS.ErrnoException) => {
+        if (err.code === 'ENOENT') {
+          reject(new Error('Ruby is not installed or not in PATH.'));
+        } else {
+          reject(new Error(`Failed to spawn Ruby process: ${err.message}`));
+        }
+      });
+
+      rubyProcess.on('close', (code) => {
+        const lastLine =
+          stdoutOutput
+            .trim()
+            .split(/\r?\n/)
+            .filter((l) => l.length > 0)
+            .pop() || '';
+        try {
+          const parsed = JSON.parse(lastLine) as {
+            success?: boolean;
+            error?: string;
+            matches?: ScriptScanMatch[];
+            sectionErrors?: ScriptScanSectionError[];
+          };
+          if (code === 0 && parsed.success === true) {
+            resolve({
+              matches: parsed.matches ?? [],
+              sectionErrors: parsed.sectionErrors ?? [],
+            });
+            return;
+          }
+          reject(new Error(parsed.error || stderrOutput || stdoutOutput || `Ruby exited with code ${code}`));
         } catch {
           reject(new Error(stderrOutput || stdoutOutput || `Ruby exited with code ${code}`));
         }
