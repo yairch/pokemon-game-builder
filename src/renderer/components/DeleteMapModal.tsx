@@ -30,19 +30,37 @@ function mapOptionLabel(mapInfos: MapInfosReadData | null, id: number): string {
   return name ? `${name} (${core})` : core;
 }
 
+/** Short headline for the active preflight step (present tense, what is running now). */
 function progressPrimaryLine(p: DeletePreflightProgress | null): string {
   if (!p) return 'Starting integrity checks…';
   switch (p.step) {
     case 'system':
-      return 'Checking System.rxdata…';
+      return 'Checking System.rxdata';
     case 'map-events':
-      return `Scanning surviving maps for references (${p.current}/${p.total})…`;
+      return `Checking map events (${p.current}/${p.total})`;
     case 'scripts':
-      return 'Scanning Scripts.rxdata…';
+      return 'Checking Scripts.rxdata';
     case 'done':
-      return 'Checks complete.';
+      return 'Integrity checks complete';
     default:
       return 'Working…';
+  }
+}
+
+/** One line describing what this step is scanning (shown under the headline). */
+function progressDetailLine(p: DeletePreflightProgress | null): string {
+  if (!p) return 'Loading System data next.';
+  switch (p.step) {
+    case 'system':
+      return 'Reading start map and edit-map pointers so we know what must stay valid after deletion.';
+    case 'map-events':
+      return 'Walking event commands on each surviving map for transfers and scripts that reference maps you are removing.';
+    case 'scripts':
+      return 'Searching script sections for numbers that may reference deleted map IDs.';
+    case 'done':
+      return 'Review any blockers or warnings below. Delete stays disabled until it is safe to confirm.';
+    default:
+      return '';
   }
 }
 
@@ -271,16 +289,13 @@ const DeleteMapModal: React.FC<DeleteMapModalProps> = ({
                   This removes{' '}
                   <strong className="font-semibold text-zinc-800">
                     {previewDeletedCount ?? result?.deletedIds.length ?? '…'} maps
-                  </strong>{' '}
-                  including nested maps under{' '}
-                  <span className="font-medium text-zinc-800">{mapTitle}</span>. Each entry is removed from MapInfos and{' '}
-                  <span className="font-mono text-[12px] text-zinc-700">Data/{mapCore}.rxdata</span> (and nested maps’ files) are deleted from disk.
+                  </strong>
+                  , including nested maps under{' '}
+                  <span className="font-medium text-zinc-800">{mapTitle}</span>. Those maps are deleted from the project; the steps below scan for anything that still references them.
                 </>
               ) : (
                 <>
-                  Permanently delete{' '}
-                  <span className="font-medium text-zinc-800">{mapTitle}</span>: its MapInfos row and{' '}
-                  <span className="font-mono text-[12px] text-zinc-700">Data/{mapCore}.rxdata</span>.
+                  Permanently delete <span className="font-medium text-zinc-800">{mapTitle}</span>. The map is removed from the project; the steps below scan for anything that still references it.
                 </>
               )}
             </p>
@@ -289,11 +304,8 @@ const DeleteMapModal: React.FC<DeleteMapModalProps> = ({
           <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-5 py-4">
             <div className="rounded-lg border border-zinc-200/90 bg-zinc-50/80 px-3 py-2.5">
               <p className="text-[12px] font-semibold uppercase tracking-wide text-zinc-500">Integrity checks</p>
-              <p className="mt-1 text-[13px] leading-snug text-zinc-800">{progressPrimaryLine(progress)}</p>
-              <p className="mt-1 text-[12px] leading-snug text-zinc-500">
-                We scan System data, every surviving map’s events, and Scripts.rxdata so we don’t leave dangling references to maps that would
-                disappear.
-              </p>
+              <p className="mt-1 text-[13px] font-medium leading-snug text-zinc-800">{progressPrimaryLine(progress)}</p>
+              <p className="mt-1 text-[12px] leading-snug text-zinc-600">{progressDetailLine(progress)}</p>
               {phase === 'preflight' ? (
                 <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-zinc-200/90">
                   <div className="h-full w-1/3 animate-pulse rounded-full bg-blue-500/70" />

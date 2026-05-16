@@ -175,6 +175,16 @@ module RPG
     attr_accessor :enemy_collapse_se, :words, :test_battlers, :test_troop_id
     attr_accessor :start_map_id, :start_x, :start_y, :battleback_name, :battler_name
     attr_accessor :battler_hue, :edit_map_id
+
+    # Pokémon Essentials stores vocabulary strings in RPG::System::Words. Vanilla RMXP
+    # uses a plain structure; Marshal still encodes the constant name. Define an empty
+    # shell so Marshal.load can restore ivars without loading the full Essentials runtime.
+    class Words
+    end
+
+    # Essentials: entries in test_battlers are RPG::System::TestBattler instances.
+    class TestBattler
+    end
   end
 end
 
