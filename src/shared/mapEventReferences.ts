@@ -1,6 +1,6 @@
 /**
  * Extract map-id references from a `MapReadData`'s events. Pure TS — used by the delete
- * preflight pipeline (commit 5) when walking surviving maps in bounded parallel.
+ * preflight pipeline when walking maps that **remain** after a simulated delete (bounded parallel reads).
  *
  * Whitelist of RPGXP event command codes (v1):
  *
@@ -102,8 +102,8 @@ export function scanTextForMapIds(
 
 /**
  * Walk every event/page/command on the map and yield references pointing at any of the
- * candidate (to-be-deleted) ids. The aggregator (commit 5) then merges results across all
- * surviving maps into `DeletePreflightResult.references`.
+ * candidate (to-be-deleted) ids. The delete preflight orchestrator merges these into
+ * `DeletePreflightResult.references`.
  *
  * Empty results when `deletedIds` is empty — useful so callers don't need to guard.
  */

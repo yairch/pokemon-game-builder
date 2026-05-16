@@ -111,6 +111,7 @@ The project is a working POC with:
 - AI has no semantic tile context in chat prompts (Phase 2 owns this).
 - Map preview uses **static frame 0** for autotiles — not RMXP-composed water/edges (tracked in GUI roadmap **G1**).
 - GUI: **G0** complete (map tree, `read-map` preview, markers, layer strip, grid) still sits in a **single scrolling column**; **GW** (multi-pane workbench) is the next GUI milestone — see companion [`§GW`](./gui_editor_mvp_roadmap.md#gw--workbench-rework-between-g0-and-g1) and todo **`pr-gw`** above. **Interactive tree** (drag-drop, delete, integrity scan, start-map banner) is specified in [`map_worktree_editor_design.plan.md`](./map_worktree_editor_design.plan.md) (**`pr-gw-map-tree`**).
+- **Map delete (tree context menu)** runs integrity preflight before confirm; blocking references are **actionable-only** (engine Transfer Player literals plus idiom-linked script/comment matches — details and modal policy in [`map_worktree_editor_design.plan.md`](./map_worktree_editor_design.plan.md)).
 
 ---
 
