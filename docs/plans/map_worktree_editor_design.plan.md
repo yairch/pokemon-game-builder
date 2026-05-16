@@ -34,7 +34,8 @@ This document **concludes** the product and UX decisions for upgrading the **Map
 
 - **Undo / timed revert toast** — deferred.
 - **Scan result caching** — deferred (every delete preflight runs a **full** scan).
-- Perfect guarantees against **every** hypothetical script reference pattern — scanning aims for **high-fidelity** parsing with documented ambiguity handling where needed.
+- **Force delete / bypass integrity preflight** — users cannot confirm delete while blockers remain; they must fix prerequisites or cancel.
+- Perfect guarantees against **every** hypothetical script reference pattern — v1 uses **actionable semantic rules** with documented gaps (see § Future expansion).
 
 ---
 
@@ -76,13 +77,18 @@ This document **concludes** the product and UX decisions for upgrading the **Map
 
 1. **Determinate UX:** stepped progress — e.g. **System check → map events (n/total) → scripts** — with short explanation (*why we wait*: prevent broken references and unsafe game state).
 2. **Performance:** bounded **parallelism** on map reads (e.g. 4–8 workers / queued bridge calls); **do not** sacrifice fidelity for speed.
-3. **Blocking:** Any **blocking condition** prevents confirming delete until resolved **inside our app** where possible; user should **not** need RMXP except for fixes **we explicitly do not automate yet**.
+3. **Blocking:** Any **blocking condition** prevents confirming delete until **prerequisites** are met — **in-app** where we provide automation (e.g. start-map picker), otherwise **in RPG Maker XP / Essentials** for reference edits we do not automate yet.
 
-**Scan coverage (full fidelity target)**
+**Scan coverage (v1 target)**
 
 - **`System.rxdata`:** `start_map_id`, `edit_map_id` vs proposed survivor map set after simulated delete.
-- **Every surviving `Map###.rxdata`:** walk **event commands** and interpret **known codes / parameter shapes** that carry **map IDs** (whitelist-driven — extend as discovery warrants).
-- **`Scripts.rxdata`:** structured scan of script sections for map-id references (strategy TBD in implementation; prefer low **false negatives** over silent allows).
+- **Every map file still present after the simulated delete:** walk **event commands** and interpret **known codes / parameter shapes** that carry **map IDs** (whitelist-driven — extend as discovery warrants).
+- **`Scripts.rxdata`:** scan script sections for references using **actionable rules only** — block delete **only** on **semantic / high-confidence** map-id usage (engine-defined event slots, e.g. Transfer Player literal map id; script patterns tied to known map-transfer idioms). **Do not block** on bare integer literals with no map-transfer context (**avoids unactionable noise** from unrelated constants). Residual risk (odd literals, custom helpers) is **accepted** for v1; see § Future expansion.
+
+**Modal copy (reference blockers)**
+
+- Describe **what depends on what**: e.g. which **map / event / script location** references a **map id that would be removed**, without using implementation jargon like **“surviving map.”**
+- Frame remediation **forward**: the intended delete has **prerequisites** (fix or remove those references in RPG Maker XP / Essentials, then run delete again). Do **not** present “cancel” or “narrow scope” as primary guidance — those remain implicit via **Cancel** and user choice.
 
 **Policy**
 
@@ -90,7 +96,15 @@ This document **concludes** the product and UX decisions for upgrading the **Map
 |---------|--------|
 | **`start_map_id`** invalid **or** deleted by operation | **Blocking** unless user changes scope or fixes **inside app** (e.g. pick new start map before confirm — flow TBD). **Deleting the last map(s)** triggers dedicated warning (below). |
 | **`edit_map_id`** invalid **or** inside deleted subtree | **Auto-fix** (see § Editor selection map id). **No mandatory extra toast** when maps remain; empty-tree case silent in UX except overall empty state. |
-| References from events/scripts to deleted IDs | **Blocking** until references removed or adjusted — **integrity over convenience**. |
+| References from events/scripts to deleted IDs | **Blocking** only when the scan classifies the hit as **semantic / actionable** (see scan coverage). **No blocking** on unrelated numeric coincidence. |
+
+---
+
+## Future expansion — variable / runtime-aware delete scan
+
+**v1 limitation:** The preflight is **static**. Event command **201** with **variable** map appointment (`appoint_type` ≠ direct literal) is **not** resolved (variable indices are not map ids). Script **runtime** paths (`$game_variables`, computed ids, indirection) are **not** modeled.
+
+**Future work (non‑v1):** Explore **narrow**, cost‑bounded analyses where value pays off — for example: tracing **literal → Control Variables → Transfer Player** chains inside **event command graphs** for common patterns; **limited** constant folding for script **text**; or optional **manual** “trust / ignore” lists. Full symbolic execution or running the game **out of scope** unless explicitly rescoped.
 
 ---
 
@@ -154,3 +168,4 @@ Not a full API spec — parent plans own PR breakdown.
 | Date | Change |
 |------|--------|
 | 2026-05-13 | Initial design conclusion wired to main MVP plan + GUI roadmap |
+| 2026-05-15 | Delete scan: actionable-only blocking (no bare-literal noise); modal copy principles; § Future expansion for variable/runtime-aware scan; **force delete non‑goal** |
