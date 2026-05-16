@@ -1,7 +1,13 @@
 import { contextBridge, ipcRenderer } from 'electron';
 
 contextBridge.exposeInMainWorld('electron', {
-  invoke: (channel: string, data: any) => ipcRenderer.invoke(channel, data),
+  invoke: (channel: string, data: unknown) => ipcRenderer.invoke(channel, data),
+  /** Subscribe to stepped progress during `delete-preflight` IPC (renderer correlates via `jobId`). */
+  onDeletePreflightProgress: (listener: (payload: unknown) => void) => {
+    const wrapped = (_event: Electron.IpcRendererEvent, payload: unknown) => listener(payload);
+    ipcRenderer.on('delete-preflight-progress', wrapped);
+    return () => ipcRenderer.removeListener('delete-preflight-progress', wrapped);
+  },
 });
 
 window.addEventListener('DOMContentLoaded', () => {

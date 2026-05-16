@@ -18,6 +18,32 @@ import {
   SystemReadData
 } from '../shared/types';
 
+/** One literal match in a Scripts.rxdata section text. See marshal_handler.rb `scan_scripts_for_map_ids`. */
+export interface ScriptScanMatch {
+  sectionIndex: number;
+  sectionName: string;
+  /** 1-based line within the decompressed section text. */
+  line: number;
+  /** The candidate id that this line literal matched. */
+  targetMapId: number;
+  /** Always 'high' — only idiom-context lines are scanned (see marshal_handler.rb). */
+  confidence: 'high';
+  /** Trimmed line for the modal references list (capped). */
+  snippet: string;
+}
+
+/** A section that failed to inflate. Non-fatal — the scan continues for other sections. */
+export interface ScriptScanSectionError {
+  sectionIndex: number;
+  sectionName: string;
+  error: string;
+}
+
+export interface ScriptScanResult {
+  matches: ScriptScanMatch[];
+  sectionErrors: ScriptScanSectionError[];
+}
+
 export class MapGenerator {
   private rubyScriptPath: string;
   private rubyBinary: string;
@@ -668,6 +694,176 @@ export class MapGenerator {
           const parsed = JSON.parse(lastLine) as { success?: boolean; error?: string };
           if (code === 0 && parsed.success === true) {
             resolve();
+            return;
+          }
+          reject(new Error(parsed.error || stderrOutput || stdoutOutput || `Ruby exited with code ${code}`));
+        } catch {
+          reject(new Error(stderrOutput || stdoutOutput || `Ruby exited with code ${code}`));
+        }
+      });
+    });
+  }
+
+  /**
+   * Atomically delete a set of map ids from MapInfos.rxdata + Data/Map###.rxdata, and patch
+   * System.rxdata's start_map_id / edit_map_id to the provided values.
+   *
+   * The TS side computes the new start / edit values (see `simulateDelete` +
+   * `pickEditMapIdAutoFix` in `src/shared/deleteIntegrity.ts`) and passes them in; Ruby just
+   * applies. Ruby uses `.bak` rollback internally; on failure the original files are restored
+   * best-effort and the `.bak` files are retained on disk so the user has a manual recovery
+   * path. See `delete_maps` in marshal_handler.rb for the full pipeline.
+   *
+   * Resolves on `{ success: true }` from Ruby. Rejects with the Ruby `error` message
+   * (and any restore-error detail) on failure.
+   */
+  async deleteMaps(
+    projectPath: string,
+    payload: { ids: number[]; newStartMapId: number; newEditMapId: number }
+  ): Promise<{ deletedFromMapInfos: number; mapFilesDeleted: number; requestedIds: number[] }> {
+    return new Promise((resolve, reject) => {
+      const rubyProcess = spawn(this.rubyBinary, [this.rubyScriptPath, 'delete_maps', projectPath], {
+        stdio: ['pipe', 'pipe', 'pipe'],
+      });
+
+      rubyProcess.stdin.write(JSON.stringify(payload));
+      rubyProcess.stdin.end();
+
+      let stdoutOutput = '';
+      let stderrOutput = '';
+
+      rubyProcess.stdout.on('data', (data: Buffer) => {
+        stdoutOutput += data.toString();
+      });
+      rubyProcess.stderr.on('data', (data: Buffer) => {
+        stderrOutput += data.toString();
+      });
+
+      rubyProcess.on('error', (err: NodeJS.ErrnoException) => {
+        if (err.code === 'ENOENT') {
+          reject(
+            new Error(
+              'Ruby is not installed or not in PATH. Install Ruby (e.g. rubyinstaller.org) and restart the app.'
+            )
+          );
+        } else {
+          reject(new Error(`Failed to spawn Ruby process: ${err.message}`));
+        }
+      });
+
+      rubyProcess.on('close', (code) => {
+        // Ruby emits a single JSON line as its last stdout line; earlier lines (if any) are
+        // diagnostic logs. Match the pattern used by writeMapInfosHierarchy above.
+        const lastLine =
+          stdoutOutput
+            .trim()
+            .split(/\r?\n/)
+            .filter((l) => l.length > 0)
+            .pop() || '';
+        try {
+          const parsed = JSON.parse(lastLine) as {
+            success?: boolean;
+            error?: string;
+            deletedFromMapInfos?: number;
+            mapFilesDeleted?: number;
+            requestedIds?: number[];
+            restoreErrors?: string[];
+            backupsRetained?: string[];
+          };
+          if (code === 0 && parsed.success === true) {
+            resolve({
+              deletedFromMapInfos: parsed.deletedFromMapInfos ?? 0,
+              mapFilesDeleted: parsed.mapFilesDeleted ?? 0,
+              requestedIds: parsed.requestedIds ?? payload.ids,
+            });
+            return;
+          }
+          // Include restore detail in the rejection message when present, so handlers / UI
+          // can surface a clearer state ("we tried to roll back, here's what happened").
+          const base = parsed.error || stderrOutput || stdoutOutput || `Ruby exited with code ${code}`;
+          const restore = parsed.restoreErrors?.length
+            ? ` (restore errors: ${parsed.restoreErrors.join('; ')})`
+            : '';
+          const retained = parsed.backupsRetained?.length
+            ? ` (backups retained: ${parsed.backupsRetained.join(', ')})`
+            : '';
+          reject(new Error(`${base}${restore}${retained}`));
+        } catch {
+          reject(new Error(stderrOutput || stdoutOutput || `Ruby exited with code ${code}`));
+        }
+      });
+    });
+  }
+
+  /**
+   * Scan Scripts.rxdata for literal integer references to any of `candidateIds`. Ruby owns
+   * inflate (zlib) + Marshal load; TS owns the candidate set + the idiom list (which lives
+   * in `src/shared/mapEventReferences.ts` as `MAP_ID_IDIOMS`, the single source of truth
+   * shared with the event-walk scanner in commit 2).
+   *
+   * Designed to be called by the preflight pipeline (commit 5) once per delete, with the
+   * full set of to-be-deleted ids. Returns matches (with confidence) plus any per-section
+   * inflate errors (rare but possible if Scripts.rxdata was hand-edited).
+   *
+   * Empty `candidateIds` short-circuits to an empty result without invoking Ruby's regex
+   * over megabytes of script text — a real optimization for "scan-then-no-op" flows.
+   */
+  async scanScriptsForMapIds(
+    projectPath: string,
+    payload: { candidateIds: number[]; idioms: ReadonlyArray<string> }
+  ): Promise<ScriptScanResult> {
+    if (!payload.candidateIds || payload.candidateIds.length === 0) {
+      return { matches: [], sectionErrors: [] };
+    }
+    const scriptsPath = path.join(projectPath, 'Data', 'Scripts.rxdata');
+
+    return new Promise((resolve, reject) => {
+      const rubyProcess = spawn(
+        this.rubyBinary,
+        [this.rubyScriptPath, 'scan_scripts_for_map_ids', scriptsPath],
+        { stdio: ['pipe', 'pipe', 'pipe'] }
+      );
+
+      rubyProcess.stdin.write(JSON.stringify(payload));
+      rubyProcess.stdin.end();
+
+      let stdoutOutput = '';
+      let stderrOutput = '';
+
+      rubyProcess.stdout.on('data', (data: Buffer) => {
+        stdoutOutput += data.toString();
+      });
+      rubyProcess.stderr.on('data', (data: Buffer) => {
+        stderrOutput += data.toString();
+      });
+
+      rubyProcess.on('error', (err: NodeJS.ErrnoException) => {
+        if (err.code === 'ENOENT') {
+          reject(new Error('Ruby is not installed or not in PATH.'));
+        } else {
+          reject(new Error(`Failed to spawn Ruby process: ${err.message}`));
+        }
+      });
+
+      rubyProcess.on('close', (code) => {
+        const lastLine =
+          stdoutOutput
+            .trim()
+            .split(/\r?\n/)
+            .filter((l) => l.length > 0)
+            .pop() || '';
+        try {
+          const parsed = JSON.parse(lastLine) as {
+            success?: boolean;
+            error?: string;
+            matches?: ScriptScanMatch[];
+            sectionErrors?: ScriptScanSectionError[];
+          };
+          if (code === 0 && parsed.success === true) {
+            resolve({
+              matches: parsed.matches ?? [],
+              sectionErrors: parsed.sectionErrors ?? [],
+            });
             return;
           }
           reject(new Error(parsed.error || stderrOutput || stdoutOutput || `Ruby exited with code ${code}`));

@@ -10,6 +10,12 @@ import { MapGenerator } from './map-generator';
 import { MapSpec, TilesetInspectorData, MapInfoHierarchyWriteRow } from '../shared/types';
 import { TileBlock, extractTileBlocks, extractTilePairs } from './tile-utils';
 import { handleChatMapPipeline } from './chat-map-pipeline';
+import {
+  runDeletePreflight,
+  type DeletePreflightDeps,
+  type DeletePreflightProgress,
+  type DeletePreflightResult,
+} from './delete-preflight';
 import * as path from 'path';
 import { pathToFileURL } from 'url';
 import * as fs from 'fs-extra';
@@ -396,6 +402,100 @@ export async function handleApplyMapInfosTree(projectPath: string, rows: MapInfo
     return { success: true, data };
   } catch (error: any) {
     return { success: false, error: error.message || 'Failed to write map infos hierarchy.' };
+  }
+}
+
+/**
+ * Delete a set of map ids from a project: remove from MapInfos, delete Map###.rxdata, and
+ * patch System start_map_id / edit_map_id. TS callers must pre-compute the new start / edit
+ * map ids via `simulateDelete` + `pickEditMapIdAutoFix` (commit 1) and pass them in here —
+ * Ruby just applies. Atomicity ( `.bak` rollback on failure ) is handled in Ruby.
+ *
+ * Returns the refreshed `mapInfos` + `system` on success so the renderer can drop its old
+ * copy without a second round-trip.
+ */
+export interface DeleteMapsPayload {
+  ids: number[];
+  newStartMapId: number;
+  newEditMapId: number;
+}
+
+export async function handleDeleteMaps(projectPath: string, payload: DeleteMapsPayload) {
+  if (!projectPath) return { success: false, error: 'Project path is required.' };
+  if (!payload || typeof payload !== 'object') {
+    return { success: false, error: 'Payload must include ids, newStartMapId, newEditMapId.' };
+  }
+  if (!Array.isArray(payload.ids) || payload.ids.length === 0) {
+    return { success: false, error: 'ids must be a non-empty array of positive integers.' };
+  }
+  for (const id of payload.ids) {
+    if (!Number.isFinite(id) || id < 1) {
+      return { success: false, error: `Invalid id ${id} in payload (must be a positive integer).` };
+    }
+  }
+  if (!Number.isFinite(payload.newStartMapId) || payload.newStartMapId < 0) {
+    return { success: false, error: `Invalid newStartMapId ${payload.newStartMapId}.` };
+  }
+  if (!Number.isFinite(payload.newEditMapId) || payload.newEditMapId < 0) {
+    return { success: false, error: `Invalid newEditMapId ${payload.newEditMapId}.` };
+  }
+  try {
+    const result = await mapGenerator.deleteMaps(projectPath, payload);
+    // Refresh the renderer's view in one round-trip. Each call is independently fallible:
+    // if read-back fails, the delete still succeeded on disk — surface a partial response.
+    const [mapInfos, system] = await Promise.all([
+      mapGenerator.readMapInfos(projectPath).catch(() => null),
+      mapGenerator.readSystem(projectPath).catch(() => null),
+    ]);
+    return { success: true, data: { result, mapInfos, system } };
+  } catch (error: any) {
+    return { success: false, error: error.message || 'Failed to delete maps.' };
+  }
+}
+
+/**
+ * Run the delete preflight pipeline (system check → map events → scripts) and return the
+ * aggregated result. The IPC layer wraps `onProgress` so progress events fan out via
+ * `webContents.send`; the REST layer stores progress in a job table keyed by `jobId` for
+ * polling. Both paths converge on the same `DeletePreflightResult`.
+ *
+ * Deps default to the live `mapGenerator`; tests inject mocks via `runDeletePreflight`
+ * directly (no need to test argument-wiring through this thin handler).
+ */
+export interface DeletePreflightOptions {
+  onProgress?: (p: DeletePreflightProgress) => void;
+}
+
+export async function handleDeletePreflight(
+  projectPath: string,
+  ids: number[],
+  options: DeletePreflightOptions = {}
+): Promise<{ success: boolean; data?: DeletePreflightResult; error?: string }> {
+  if (!projectPath) return { success: false, error: 'Project path is required.' };
+  if (!Array.isArray(ids) || ids.length === 0) {
+    return { success: false, error: 'ids must be a non-empty array of positive integers.' };
+  }
+  for (const id of ids) {
+    if (!Number.isFinite(id) || id < 1) {
+      return { success: false, error: `Invalid id ${id} in ids (must be a positive integer).` };
+    }
+  }
+  const deps: DeletePreflightDeps = {
+    readMapInfos: (p) => mapGenerator.readMapInfos(p),
+    readSystem: (p) => mapGenerator.readSystem(p),
+    readMap: (p, id) => mapGenerator.readMap(p, id),
+    scanScriptsForMapIds: (p, payload) => mapGenerator.scanScriptsForMapIds(p, payload),
+  };
+  try {
+    const result = await runDeletePreflight({
+      projectPath,
+      ids,
+      deps,
+      onProgress: options.onProgress,
+    });
+    return { success: true, data: result };
+  } catch (error: any) {
+    return { success: false, error: error.message || 'Delete preflight failed.' };
   }
 }
 

@@ -1,17 +1,139 @@
+import type { DeletePreflightProgress, DeletePreflightResult } from '../../shared/deletePreflightTypes';
+
 const API_BASE = 'http://localhost:3001/api';
 
+export type DeletePreflightBridgeResponse = {
+  success: boolean;
+  data?: DeletePreflightResult;
+  error?: string;
+};
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function parsePreflightProgressPayload(payload: unknown): DeletePreflightProgress | null {
+  if (!payload || typeof payload !== 'object') return null;
+  const o = payload as Record<string, unknown>;
+  const step = o.step;
+  if (step === 'system' || step === 'scripts' || step === 'done') return { step };
+  if (step === 'map-events') {
+    const current = Number(o.current);
+    const total = Number(o.total);
+    if (!Number.isFinite(current) || !Number.isFinite(total)) return null;
+    return { step: 'map-events', current, total };
+  }
+  return null;
+}
+
+async function runDeletePreflightBrowser(
+  projectPath: string,
+  ids: number[],
+  onProgress?: (p: DeletePreflightProgress) => void
+): Promise<DeletePreflightBridgeResponse> {
+  const startRes = await fetch(`${API_BASE}/delete-preflight`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ projectPath, ids }),
+  });
+  const startJson = (await startRes.json()) as {
+    success?: boolean;
+    jobId?: string;
+    error?: string;
+  };
+  if (!startJson.success || !startJson.jobId) {
+    return { success: false, error: startJson.error || 'Failed to start delete preflight.' };
+  }
+  const jobId = startJson.jobId;
+  const deadline = Date.now() + 5 * 60 * 1000;
+  while (Date.now() < deadline) {
+    await sleep(250);
+    const stRes = await fetch(`${API_BASE}/delete-preflight-status?jobId=${encodeURIComponent(jobId)}`);
+    const stJson = (await stRes.json()) as {
+      success?: boolean;
+      progress?: DeletePreflightProgress | null;
+      result?: DeletePreflightResult | null;
+      error?: string | null;
+      done?: boolean;
+    };
+    if (!stJson.success) {
+      return { success: false, error: stJson.error || 'Preflight status request failed.' };
+    }
+    if (stJson.progress) onProgress?.(stJson.progress);
+    if (stJson.done) {
+      if (stJson.error) return { success: false, error: stJson.error };
+      if (!stJson.result) return { success: false, error: 'Preflight finished without a result.' };
+      return { success: true, data: stJson.result };
+    }
+  }
+  return { success: false, error: 'Delete preflight timed out waiting for completion.' };
+}
+
+async function withPreflightTimeout<T>(work: Promise<T>): Promise<T> {
+  const ms = 120000;
+  return Promise.race([
+    work,
+    new Promise<T>((_, rej) =>
+      setTimeout(() => rej(new Error(`Delete preflight timed out after ${ms / 1000} seconds.`)), ms)
+    ),
+  ]);
+}
+
 export const bridge = {
+  /**
+   * Runs delete integrity preflight with stepped progress.
+   * Electron: IPC `delete-preflight` + `delete-preflight-progress` push events.
+   * Browser: POST `/api/delete-preflight` then poll `/api/delete-preflight-status`.
+   */
+  async runDeletePreflight(
+    projectPath: string,
+    ids: number[],
+    onProgress?: (p: DeletePreflightProgress) => void
+  ): Promise<DeletePreflightBridgeResponse> {
+    try {
+      const electron = window.electron;
+      if (electron?.invoke) {
+        return await withPreflightTimeout(
+          (async (): Promise<DeletePreflightBridgeResponse> => {
+            const jobId = crypto.randomUUID();
+            const unsub =
+              typeof electron.onDeletePreflightProgress === 'function'
+                ? electron.onDeletePreflightProgress((payload: unknown) => {
+                    if (!payload || typeof payload !== 'object') return;
+                    const obj = payload as { jobId?: unknown };
+                    if (obj.jobId !== jobId) return;
+                    const progress = parsePreflightProgressPayload(payload);
+                    if (progress) onProgress?.(progress);
+                  })
+                : undefined;
+            try {
+              return (await electron.invoke('delete-preflight', {
+                projectPath,
+                ids,
+                jobId,
+              })) as DeletePreflightBridgeResponse;
+            } finally {
+              unsub?.();
+            }
+          })()
+        );
+      }
+      return await withPreflightTimeout(runDeletePreflightBrowser(projectPath, ids, onProgress));
+    } catch (e: unknown) {
+      return { success: false, error: e instanceof Error ? e.message : String(e) };
+    }
+  },
+
   invoke: async (channel: string, data?: any): Promise<any> => {
-    const timeoutMs = channel === 'run-map-test' ? 120000 : 30000;
+    const timeoutMs =
+      channel === 'run-map-test' || channel === 'delete-maps' ? 120000 : 30000;
     // Create a timeout promise (longer for AI map tests)
     const timeoutPromise = new Promise((_, reject) =>
       setTimeout(() => reject(new Error(`Request timed out after ${timeoutMs / 1000} seconds.`)), timeoutMs)
     );
 
     const callPromise = (async () => {
-      // @ts-ignore
-      if (window.electron) {
-        // @ts-ignore
+      if (window.electron?.invoke) {
         return window.electron.invoke(channel, data);
       }
 
@@ -112,6 +234,14 @@ export const bridge = {
         }
         case 'apply-map-infos-tree': {
           const res = await fetch(`${API_BASE}/apply-map-infos-tree`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(data),
+          });
+          return res.json();
+        }
+        case 'delete-maps': {
+          const res = await fetch(`${API_BASE}/delete-maps`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(data),

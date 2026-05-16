@@ -5,7 +5,12 @@
 
 import express from 'express';
 import cors from 'cors';
+import { randomUUID } from 'crypto';
 import * as h from './handlers';
+import type {
+  DeletePreflightProgress,
+  DeletePreflightResult,
+} from '../shared/deletePreflightTypes';
 
 const api = express();
 api.use(cors());
@@ -45,6 +50,107 @@ api.get('/api/read-map-infos', async (req, res) => res.json(await h.handleReadMa
 api.post('/api/apply-map-infos-tree', async (req, res) => {
   const { projectPath, rows } = req.body ?? {};
   res.json(await h.handleApplyMapInfosTree(projectPath, rows));
+});
+api.post('/api/delete-maps', async (req, res) => {
+  const { projectPath, payload } = req.body ?? {};
+  res.json(await h.handleDeleteMaps(projectPath, payload));
+});
+
+// --- Delete preflight: async job + polling (browser-fallback only) ---
+//
+// In Electron mode, progress flows via IPC `webContents.send`; the renderer
+// awaits the IPC handle for the final result. The REST path is used by the
+// browser-fallback runtime, where we can't push events back to the renderer —
+// the renderer kicks off a job, then polls `delete-preflight-status` until
+// `done: true`. Polling at ~250 ms is fine for a job whose runtime is
+// seconds (see plan: SSE is overkill for v1).
+
+interface PreflightJob {
+  progress: DeletePreflightProgress | null;
+  result: DeletePreflightResult | null;
+  error: string | null;
+  startedAt: number;
+  doneAt: number | null;
+}
+
+const preflightJobs = new Map<string, PreflightJob>();
+const PREFLIGHT_JOB_TTL_MS = 5 * 60 * 1000;
+
+function cleanupPreflightJobs(): void {
+  const now = Date.now();
+  for (const [id, job] of preflightJobs.entries()) {
+    if (job.doneAt != null && now - job.doneAt > PREFLIGHT_JOB_TTL_MS) {
+      preflightJobs.delete(id);
+    }
+  }
+}
+
+api.post('/api/delete-preflight', (req, res) => {
+  const { projectPath, ids } = req.body ?? {};
+  // Surface validation errors synchronously by running the handler with empty options;
+  // if validation passes, the handler will start scanning. We can't easily separate
+  // "validation failed" from "scan failed" here without re-implementing validation,
+  // so we just do a quick sanity check before claiming a jobId.
+  if (!projectPath || !Array.isArray(ids) || ids.length === 0) {
+    res.status(400).json({ success: false, error: 'projectPath and non-empty ids are required.' });
+    return;
+  }
+
+  const jobId = randomUUID();
+  preflightJobs.set(jobId, {
+    progress: null,
+    result: null,
+    error: null,
+    startedAt: Date.now(),
+    doneAt: null,
+  });
+
+  // Fire-and-forget. The async closure owns updating the job table.
+  void (async () => {
+    try {
+      const out = await h.handleDeletePreflight(projectPath, ids, {
+        onProgress: (p) => {
+          const job = preflightJobs.get(jobId);
+          if (job) job.progress = p;
+        },
+      });
+      const job = preflightJobs.get(jobId);
+      if (!job) return;
+      if (out.success && out.data) {
+        job.result = out.data;
+      } else {
+        job.error = out.error ?? 'Unknown preflight error.';
+      }
+      job.doneAt = Date.now();
+    } catch (e: any) {
+      const job = preflightJobs.get(jobId);
+      if (job) {
+        job.error = e?.message ?? String(e);
+        job.doneAt = Date.now();
+      }
+    } finally {
+      cleanupPreflightJobs();
+    }
+  })();
+
+  res.json({ success: true, jobId });
+});
+
+api.get('/api/delete-preflight-status', (req, res) => {
+  const jobId = String(req.query.jobId ?? '');
+  const job = preflightJobs.get(jobId);
+  if (!job) {
+    res.status(404).json({ success: false, error: 'Unknown jobId (may have expired).' });
+    return;
+  }
+  res.json({
+    success: true,
+    jobId,
+    progress: job.progress,
+    result: job.result,
+    error: job.error,
+    done: job.doneAt != null,
+  });
 });
 api.get('/api/read-tilesets', async (req, res) => res.json(await h.handleReadTilesets(req.query.projectPath as string)));
 api.get('/api/read-system', async (req, res) => res.json(await h.handleReadSystem(req.query.projectPath as string)));

@@ -2,6 +2,7 @@ require 'json'
 require 'fileutils'
 require 'base64'
 require 'set'
+require 'zlib'
 
 # Define RPG Maker XP classes so Marshal can load them
 module RPG
@@ -174,6 +175,16 @@ module RPG
     attr_accessor :enemy_collapse_se, :words, :test_battlers, :test_troop_id
     attr_accessor :start_map_id, :start_x, :start_y, :battleback_name, :battler_name
     attr_accessor :battler_hue, :edit_map_id
+
+    # Pokémon Essentials stores vocabulary strings in RPG::System::Words. Vanilla RMXP
+    # uses a plain structure; Marshal still encodes the constant name. Define an empty
+    # shell so Marshal.load can restore ivars without loading the full Essentials runtime.
+    class Words
+    end
+
+    # Essentials: entries in test_battlers are RPG::System::TestBattler instances.
+    class TestBattler
+    end
   end
 end
 
@@ -648,6 +659,145 @@ rescue JSON::ParserError => e
   puts JSON.generate({ error: "Invalid JSON on stdin: #{e.message}" })
 end
 
+# Atomically delete a set of maps from a project.
+#
+# Pipeline:
+#   1. Validate args, locate MapInfos.rxdata and System.rxdata.
+#   2. PHASE 1 (backup) — make `.bak` copies of MapInfos.rxdata, System.rxdata,
+#      and every Map###.rxdata that will be removed. Backups stay on disk until
+#      the success path runs Phase 3.
+#   3. PHASE 2 (apply) — delete the ids from MapInfos, remove the Map###.rxdata
+#      files, write the new start_map_id / edit_map_id into System. All three
+#      Marshal-loaded objects are MUTATED in place so unrelated RPG::MapInfo /
+#      RPG::System fields are preserved on disk (do not rebuild objects).
+#   4. PHASE 3 (commit) — on success, delete the `.bak` files.
+#   5. On any exception during Phase 1 or 2: best-effort restore from `.bak`.
+#      A `.bak` is deleted iff its restore succeeded (then the original is
+#      byte-identical and the backup is just noise). A `.bak` is RETAINED
+#      iff its restore failed, so the user has a manual recovery path for
+#      that specific file (the on-disk original may be in an intermediate
+#      state). No user-facing "restore from backup" copy is implied — this
+#      is internal safety only (see design plan § 7).
+#
+# CLI args  : ARGV[0] = project root.
+# stdin JSON: { "ids": [Number, ...], "newStartMapId": Number, "newEditMapId": Number }
+def delete_maps(project_root)
+  raw_payload = STDIN.read.to_s
+  payload = JSON.parse(raw_payload)
+  unless payload.is_a?(Hash)
+    puts JSON.generate({ error: 'Expected JSON object { ids, newStartMapId, newEditMapId }' })
+    return
+  end
+
+  ids = Array(payload['ids']).map { |v| v.to_i }.select { |v| v > 0 }.uniq
+  new_start = (payload['newStartMapId'] || 0).to_i
+  new_edit = (payload['newEditMapId'] || 0).to_i
+
+  if ids.empty?
+    puts JSON.generate({ error: 'No valid ids in payload (expected positive integers).' })
+    return
+  end
+
+  data_dir = File.join(project_root, 'Data')
+  map_infos_path = File.join(data_dir, 'MapInfos.rxdata')
+  system_path = File.join(data_dir, 'System.rxdata')
+
+  unless File.exist?(map_infos_path)
+    puts JSON.generate({ error: "MapInfos.rxdata not found at #{map_infos_path}" })
+    return
+  end
+  unless File.exist?(system_path)
+    puts JSON.generate({ error: "System.rxdata not found at #{system_path}" })
+    return
+  end
+
+  map_paths_to_delete = ids.each_with_object([]) do |id, acc|
+    p = File.join(data_dir, "Map#{format('%03d', id)}.rxdata")
+    acc << p if File.exist?(p)
+  end
+
+  # `backups` is the rollback ledger: each [original_path, bak_path] is added the
+  # moment the .bak copy succeeds, so the rescue block can iterate it to restore.
+  backups = []
+
+  begin
+    # ---- Phase 1: take .bak copies in a fixed order ----
+    [map_infos_path, system_path, *map_paths_to_delete].each do |p|
+      bak = "#{p}.bak"
+      FileUtils.cp(p, bak)
+      backups << [p, bak]
+    end
+
+    # ---- Phase 2a: drop ids from MapInfos and write back ----
+    map_infos = normalize_map_infos_hash(File.open(map_infos_path, 'rb') { |f| Marshal.load(f) })
+    deleted_from_infos = 0
+    ids.each do |id|
+      deleted_from_infos += 1 if map_infos.delete(id)
+    end
+    File.open(map_infos_path, 'wb') { |f| Marshal.dump(map_infos, f) }
+
+    # ---- Phase 2b: delete Map###.rxdata files ----
+    map_files_deleted = 0
+    map_paths_to_delete.each do |p|
+      if File.exist?(p)
+        File.delete(p)
+        map_files_deleted += 1
+      end
+    end
+
+    # ---- Phase 2c: patch start_map_id + edit_map_id, preserve other System fields ----
+    system = File.open(system_path, 'rb') { |f| Marshal.load(f) }
+    # Mutate in-place so we don't lose magic_number, party_members, switches, audio, etc.
+    if system.respond_to?(:start_map_id=)
+      system.start_map_id = new_start
+    else
+      system.instance_variable_set(:@start_map_id, new_start)
+    end
+    if system.respond_to?(:edit_map_id=)
+      system.edit_map_id = new_edit
+    else
+      system.instance_variable_set(:@edit_map_id, new_edit)
+    end
+    File.open(system_path, 'wb') { |f| Marshal.dump(system, f) }
+
+    # ---- Phase 3: success path — clean up .bak files ----
+    backups.each { |_, bak| File.delete(bak) if File.exist?(bak) }
+
+    puts JSON.generate({
+      success: true,
+      deletedFromMapInfos: deleted_from_infos,
+      mapFilesDeleted: map_files_deleted,
+      newStartMapId: new_start,
+      newEditMapId: new_edit,
+      requestedIds: ids
+    })
+  rescue => e
+    # ---- Rescue path: best-effort restore, per-file .bak retention. ----
+    # For each backup: try to restore; on success delete the .bak (the original is
+    # now byte-identical, so the backup is just noise); on failure keep the .bak so
+    # the user has a manual recovery path for that specific file.
+    restore_errors = []
+    retained = []
+    backups.each do |orig, bak|
+      next unless File.exist?(bak)
+      begin
+        FileUtils.cp(bak, orig)
+        File.delete(bak)
+      rescue => rerr
+        restore_errors << "#{orig}: #{rerr.message}"
+        retained << bak
+      end
+    end
+    puts JSON.generate({
+      error: "delete_maps failed: #{e.message}",
+      restoreErrors: restore_errors,
+      backupsRetained: retained
+    })
+  end
+rescue JSON::ParserError => e
+  puts JSON.generate({ error: "Invalid JSON on stdin: #{e.message}" })
+end
+
 # ============================================================
 # READ FUNCTIONS - Return JSON to stdout
 # ============================================================
@@ -806,6 +956,109 @@ def read_tilesets(file_path)
   puts JSON.generate(result)
 end
 
+# Scan Scripts.rxdata for references to a candidate set of map ids.
+#
+# Scripts.rxdata format (RPG Maker XP / Pokemon Essentials):
+#   Marshal-dumped Array of [section_id, name, deflated_source_bytes]
+#   where deflated_source_bytes is `Zlib.deflate(source_text)`.
+#
+# Strategy (mirrors `scanTextForMapIds` in src/shared/mapEventReferences.ts):
+#   - For each section: inflate, walk line-by-line.
+#   - Only lines containing any caller-provided idiom substring (case-insensitive) are scanned.
+#   - On those lines only: regex `\b\d+\b` against candidate ids.
+#   - Every emitted match has confidence 'high' (idiom context required).
+#
+# Encoding: inflated bytes get forced to UTF-8 with invalid sequences replaced,
+# so Windows-style encodings or stray bytes don't crash the regex. Section-level
+# decompression errors are reported per-section (not fatal) so a single corrupt
+# script section doesn't blind the whole scan.
+#
+# CLI args  : ARGV[0] = Scripts.rxdata path.
+# stdin JSON: { "candidateIds": [Number, ...], "idioms": [String, ...] }
+# Output    : { success: true, matches: [...], sectionErrors: [...] }
+#   - match  : { sectionIndex, sectionName, line, targetMapId, confidence, snippet }
+#   - error  : { sectionIndex, sectionName, error }
+def scan_scripts_for_map_ids(file_path)
+  raw_payload = STDIN.read.to_s
+  payload = JSON.parse(raw_payload)
+  unless payload.is_a?(Hash)
+    puts JSON.generate({ error: 'Expected JSON object { candidateIds, idioms }' })
+    return
+  end
+
+  candidate_ids = Array(payload['candidateIds']).map(&:to_i).select { |i| i > 0 }.to_set
+  idioms_lower = Array(payload['idioms']).map { |s| s.to_s.downcase }
+
+  if candidate_ids.empty?
+    puts JSON.generate({ success: true, matches: [], sectionErrors: [] })
+    return
+  end
+
+  unless File.exist?(file_path)
+    puts JSON.generate({ error: "Scripts.rxdata not found at #{file_path}" })
+    return
+  end
+
+  scripts = File.open(file_path, 'rb') { |f| Marshal.load(f) }
+  unless scripts.is_a?(Array)
+    puts JSON.generate({ error: 'Scripts.rxdata: expected an Array of [id, name, deflated]' })
+    return
+  end
+
+  matches = []
+  section_errors = []
+
+  scripts.each_with_index do |entry, idx|
+    next unless entry.is_a?(Array) && entry.length >= 3
+    section_name = (entry[1] || '').to_s
+    compressed = entry[2]
+    next unless compressed.is_a?(String) && !compressed.empty?
+
+    text = nil
+    begin
+      text = Zlib::Inflate.inflate(compressed)
+    rescue => e
+      section_errors << {
+        sectionIndex: idx,
+        sectionName: section_name,
+        error: "inflate failed: #{e.message}"
+      }
+      next
+    end
+
+    # Force UTF-8 with replacement so the regex + JSON output are safe on Windows
+    # (RMXP Ruby 1.8 era encoded scripts as Windows-1252 / Shift-JIS in some locales).
+    text = text.force_encoding(Encoding::UTF_8)
+    unless text.valid_encoding?
+      text = text.encode(Encoding::UTF_8, invalid: :replace, undef: :replace, replace: '?')
+    end
+
+    text.each_line.with_index do |line, line_idx|
+      idiom_hit = idioms_lower.any? { |idiom| !idiom.empty? && line.downcase.include?(idiom) }
+      next unless idiom_hit
+
+      line.scan(/\b(\d+)\b/) do |captures|
+        n = captures[0].to_i
+        next unless candidate_ids.include?(n)
+        snippet = line.strip
+        snippet = snippet[0, 80] + '…' if snippet.length > 80
+        matches << {
+          sectionIndex: idx,
+          sectionName: section_name,
+          line: line_idx + 1,
+          targetMapId: n,
+          confidence: 'high',
+          snippet: snippet
+        }
+      end
+    end
+  end
+
+  puts JSON.generate({ success: true, matches: matches, sectionErrors: section_errors })
+rescue JSON::ParserError => e
+  puts JSON.generate({ error: "Invalid JSON on stdin: #{e.message}" })
+end
+
 def read_system(file_path)
   unless File.exist?(file_path)
     puts JSON.generate({ error: "File not found: #{file_path}" })
@@ -854,6 +1107,8 @@ if __FILE__ == $0
     update_map_infos(ARGV[1], ARGV[2], ARGV[3])
   when 'write_map_infos_hierarchy'
     write_map_infos_hierarchy(ARGV[1])
+  when 'delete_maps'
+    delete_maps(ARGV[1])
   when 'clone_map'
     clone_map(ARGV[1], ARGV[2])
   when 'patch_map_data'
@@ -870,6 +1125,8 @@ if __FILE__ == $0
     read_tilesets(ARGV[1])
   when 'read_system'
     read_system(ARGV[1])
+  when 'scan_scripts_for_map_ids'
+    scan_scripts_for_map_ids(ARGV[1])
   else
     puts JSON.generate({ error: "Unknown command: #{command}" })
   end
