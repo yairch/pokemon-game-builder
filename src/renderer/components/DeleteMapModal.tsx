@@ -54,11 +54,11 @@ function progressDetailLine(p: DeletePreflightProgress | null): string {
     case 'system':
       return 'Reading start map and edit-map pointers so we know what must stay valid after deletion.';
     case 'map-events':
-      return 'Walking event commands on each surviving map for transfers and scripts that reference maps you are removing.';
+      return 'Walking event commands on maps that would remain after this delete — looking for transfers or embedded scripts that reference the map id(s) you are removing.';
     case 'scripts':
-      return 'Searching script sections for numbers that may reference deleted map IDs.';
+      return 'Scanning Scripts.rxdata for known map-transfer patterns that mention removed map id(s).';
     case 'done':
-      return 'Review any blockers or warnings below. Delete stays disabled until it is safe to confirm.';
+      return 'Review blockers or warnings below. Delete stays disabled until prerequisites are met.';
     default:
       return '';
   }
@@ -403,10 +403,14 @@ const DeleteMapModal: React.FC<DeleteMapModalProps> = ({
             {hasRefsBlocker && result && result.references.length > 0 ? (
               <div className="rounded-lg border border-red-200 bg-red-50/80 px-3 py-2">
                 <p className="text-[13px] font-semibold text-red-900">
-                  Can&apos;t delete yet — {result.references.length} reference{result.references.length === 1 ? '' : 's'} still point at removed maps
+                  Delete blocked — {result.references.length} dependenc
+                  {result.references.length === 1 ? 'y' : 'ies'} on removed map id(s)
                 </p>
                 <p className="mt-1 text-[12px] leading-snug text-red-900/90">
-                  Fix these in RPG Maker XP (events / scripts), then try deleting again.
+                  Something in your project still targets a map you are deleting (see list below). Completing delete could strand players on a missing map or leave scripts inconsistent. Fix or remove those references in RPG Maker XP / Essentials, then try delete again.
+                </p>
+                <p className="mt-2 text-[11px] leading-snug text-red-900/75">
+                  This scan only sees literal map ids and known transfer patterns; destinations chosen purely from variables are not detected.
                 </p>
                 <ul className="mt-2 max-h-36 list-disc space-y-1 overflow-y-auto pl-4 font-mono text-[11px] leading-snug text-red-950/90">
                   {result.references.slice(0, 80).map((ref, i) => (
