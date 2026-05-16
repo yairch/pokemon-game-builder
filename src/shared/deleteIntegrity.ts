@@ -24,14 +24,14 @@ import { buildMapInfosTree, preorderMapTreeIds } from './mapInfosTree';
 // ---------------------------------------------------------------------------
 
 /**
- * One reference from a surviving event or script to a map id that is *about to be deleted*.
+ * One reference from an event or script to a map id that is *about to be deleted*.
  *
- * The pipeline aggregates these into `DeletePreflightResult.references` (commit 5) so the
- * confirmation modal can list "you must fix these before deleting."
+ * Aggregated into `DeletePreflightResult.references` so the confirmation modal can list fixes
+ * before delete proceeds.
  *
- * For scripts we cannot always know the user's intent from a bare integer literal — see the
- * `confidence` tag. Events are always `'high'` because we walk the documented RPGXP event
- * command whitelist (codes 201, 202, 209) where map-id parameter slots are explicit.
+ * **201 Transfer Player** uses an engine-defined map-id slot — no `confidence` field.
+ * Comment/script (`scanTextForMapIds`) and **Scripts.rxdata** scans only emit matches when a
+ * `MAP_ID_IDIOMS` token is present — stored as `'high'`.
  */
 export interface MapReference {
   /** Whether this came from a map event-command walk or a Scripts.rxdata text scan. */
@@ -45,15 +45,10 @@ export interface MapReference {
   /** Script section name (e.g. `'PField_Field'`) — scripts only. */
   sourceScriptName?: string;
   /**
-   * Confidence tag, scripts only:
-   *   - `'high'`     — match sits inside a known map-id idiom (`pbDirectTransfer`, `Map.from_id`,
-   *                    `$game_temp.player_new_map_id`, `transfer`, `"Map ID"`, etc.).
-   *   - `'possible'` — bare numeric-literal match; flagged because the design plan prefers
-   *                    false-positives over silent allows.
-   *
-   * Events do not carry a confidence tag (always definite) — leave undefined for events.
+   * `'high'` — comment/script body or Scripts.rxdata line included a map-transfer idiom.
+   * Omitted for **201** direct Transfer Player (semantic slot, not text scan).
    */
-  confidence?: 'high' | 'possible';
+  confidence?: 'high';
   /** Short, human-readable summary used by the modal references list. */
   summary?: string;
   /** Map id being referenced — must be one of the ids that would be deleted. */

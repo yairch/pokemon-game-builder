@@ -12,12 +12,11 @@
  *        limitation; not flagged.
  *
  *   108 / 408  Comment / Comment Continuation
- *        params[0] is the comment text. Run the same broad numeric-literal scan that the
- *        Scripts.rxdata phase uses (commit 4) so we don't silently miss in-event hints.
+ *        params[0] is the comment text. Same rule as Scripts.rxdata: literals match only when
+ *        a `MAP_ID_IDIOMS` token appears in that body (no bare-integer noise).
  *
  *   355 / 655  Script / Script Continuation
- *        params[0] is the Ruby script line. This is where Pokemon Essentials puts
- *        `pbDirectTransfer(...)`, `$game_temp.player_new_map_id = ...`, etc. Same broad scan.
+ *        params[0] is the Ruby script line — same idiom-gated numeric scan as comments.
  *
  * Codes deliberately NOT in the whitelist (documented so reviewers don't think it's an oversight):
  *
@@ -40,12 +39,12 @@ import type { EventCommandData, EventData } from './types';
 import type { MapReference } from './deleteIntegrity';
 
 /**
- * Substring tokens (case-insensitive) that, when present in a comment / script body,
- * upgrade every numeric-literal match in that body from `'possible'` → `'high'` confidence.
+ * Substring tokens (case-insensitive). A comment/script body must contain at least one for
+ * any `\b\d+\b` hits against `deletedIds` to count as references (actionable scan).
  *
  * Sourced from Pokemon Essentials script idioms and stock RPGXP Ruby helpers. This is the
- * **canonical** idiom list — Ruby's `scan_scripts_for_map_ids` (commit 4) receives this
- * via stdin so both scanners agree.
+ * **canonical** idiom list — Ruby's `scan_scripts_for_map_ids` receives this via stdin so
+ * both scanners agree.
  */
 export const MAP_ID_IDIOMS: ReadonlyArray<string> = Object.freeze([
   'pbDirectTransfer',
@@ -65,21 +64,17 @@ const SCRIPT_CODES = new Set([355, 655]);
 
 interface TextScanMatch {
   targetMapId: number;
-  confidence: 'high' | 'possible';
+  confidence: 'high';
   /** Trimmed slice of the surrounding text for display in the modal references list. */
   snippet: string;
 }
 
 /**
- * Broad numeric-literal scanner. Flags every standalone integer literal `\b\d+\b` that
- * appears in `deletedIds`. Confidence is `'high'` when the text contains any
- * `MAP_ID_IDIOMS` token (case-insensitive), else `'possible'`.
+ * Standalone integer literals `\b\d+\b` that appear in `deletedIds`, only when the text also
+ * contains a `MAP_ID_IDIOMS` token (case-insensitive). Omits unrelated numeric constants.
  *
- * Edge cases / known noise (accepted; design plan prefers false-positives over silent allows):
- *   - Hex literals like `0x123` split at the `x`; `123` will match if `123` is in delete set.
- *   - Decimals like `1.5` split at the `.`; `1` and `5` match separately if in delete set.
- *   - Negative numbers — `-1` is matched as `1`. (Map ids are positive, so seeing literal
- *     `1` is what we want anyway.)
+ * Edge cases: `\b\d+\b` matches whole digit runs (`1234` does not yield `123`). Multi-line
+ * script split across 355/655 is scanned per chunk — idiom on another chunk may hide a hit.
  */
 export function scanTextForMapIds(
   text: string,
@@ -88,10 +83,9 @@ export function scanTextForMapIds(
   if (!text || deletedIds.size === 0) return [];
   const lowerText = text.toLowerCase();
   const idiomHit = MAP_ID_IDIOMS.some((idiom) => lowerText.includes(idiom.toLowerCase()));
-  const confidence: 'high' | 'possible' = idiomHit ? 'high' : 'possible';
+  if (!idiomHit) return [];
+
   const out: TextScanMatch[] = [];
-  // `\b\d+\b` matches a complete digit run, so `123` inside `1234` will NOT double-fire —
-  // the whole `1234` is the match and word boundaries don't fire mid-digit.
   const re = /\b(\d+)\b/g;
   let m: RegExpExecArray | null;
   while ((m = re.exec(text)) !== null) {
@@ -99,7 +93,7 @@ export function scanTextForMapIds(
     if (!Number.isFinite(n) || !deletedIds.has(n)) continue;
     out.push({
       targetMapId: n,
-      confidence,
+      confidence: 'high',
       snippet: surroundingSnippet(text, m.index, m[0].length, 24),
     });
   }
@@ -151,7 +145,7 @@ export function extractMapReferencesFromEvents(
           continue;
         }
 
-        // 108/408/355/655 — text scan with confidence tagging.
+        // 108/408/355/655 — idiom-gated text scan (same policy as Scripts.rxdata).
         const isComment = COMMENT_CODES.has(code);
         const isScript = SCRIPT_CODES.has(code);
         if (!isComment && !isScript) continue;

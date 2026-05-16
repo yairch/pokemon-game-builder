@@ -16,7 +16,7 @@ import { MAP_ID_IDIOMS } from '../../shared/mapEventReferences';
  *
  * Each test rebuilds a fresh tmp project with a hand-crafted `Scripts.rxdata`
  * — an Array of [section_id, name, Zlib.deflate(text)] triples — so we control
- * exactly which idioms appear where and can assert confidence + line numbers.
+ * exactly which idioms appear where and can assert line numbers and confidence.
  *
  * Requires Ruby in PATH (same expectation as event-preserving-patch.test.ts).
  */
@@ -74,7 +74,7 @@ describe('scan_scripts_for_map_ids (Ruby integration)', () => {
     expect(result.matches[0].snippet).toContain('pbDirectTransfer');
   });
 
-  it('flags a bare numeric match (no idiom on the line) as possible confidence', async () => {
+  it('does not flag a bare numeric line without a map idiom', async () => {
     await writeScriptsFixture(scriptsPath, [
       { id: 200, name: 'NumericConst', text: 'MAP_BASE = 7\n' },
     ]);
@@ -82,22 +82,14 @@ describe('scan_scripts_for_map_ids (Ruby integration)', () => {
       candidateIds: [7],
       idioms: MAP_ID_IDIOMS,
     });
-    expect(result.matches).toHaveLength(1);
-    expect(result.matches[0]).toMatchObject({
-      sectionName: 'NumericConst',
-      line: 1,
-      targetMapId: 7,
-      confidence: 'possible',
-    });
+    expect(result.matches).toEqual([]);
   });
 
-  it('confidence is keyed per-line (idiomatic line is high, neighboring bare line is possible)', async () => {
+  it('only scans lines that contain an idiom (bare line skipped, idiom line matched)', async () => {
     await writeScriptsFixture(scriptsPath, [
       {
         id: 300,
         name: 'Mixed',
-        // line 1: bare numeric → possible
-        // line 2: contains "Map.from_id" idiom → high
         text: 'BASE = 5\nresult = Map.from_id(7)\n',
       },
     ]);
@@ -105,11 +97,12 @@ describe('scan_scripts_for_map_ids (Ruby integration)', () => {
       candidateIds: [5, 7],
       idioms: MAP_ID_IDIOMS,
     });
-    const byLine = Object.fromEntries(result.matches.map((m) => [m.line, m]));
-    expect(byLine[1].targetMapId).toBe(5);
-    expect(byLine[1].confidence).toBe('possible');
-    expect(byLine[2].targetMapId).toBe(7);
-    expect(byLine[2].confidence).toBe('high');
+    expect(result.matches).toHaveLength(1);
+    expect(result.matches[0]).toMatchObject({
+      line: 2,
+      targetMapId: 7,
+      confidence: 'high',
+    });
   });
 
   it('aggregates matches across multiple sections', async () => {

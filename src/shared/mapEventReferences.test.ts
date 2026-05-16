@@ -59,13 +59,11 @@ describe('scanTextForMapIds', () => {
     expect(scanTextForMapIds('', new Set([5]))).toEqual([]);
   });
 
-  it('flags every literal in delete set with `possible` when no idiom present', () => {
-    const result = scanTextForMapIds('foo 5 bar 7 baz', new Set([5, 7]));
-    expect(result.map((r) => r.targetMapId).sort()).toEqual([5, 7]);
-    for (const r of result) expect(r.confidence).toBe('possible');
+  it('returns empty when no map-transfer idiom is present', () => {
+    expect(scanTextForMapIds('foo 5 bar 7 baz', new Set([5, 7]))).toEqual([]);
   });
 
-  it('upgrades all matches to `high` when an idiom is present', () => {
+  it('flags literals only when an idiom is present (all matches high)', () => {
     const result = scanTextForMapIds('pbDirectTransfer(7, 5, 5)', new Set([5, 7]));
     expect(result.length).toBeGreaterThanOrEqual(2);
     for (const r of result) expect(r.confidence).toBe('high');
@@ -151,11 +149,9 @@ describe('extractMapReferencesFromEvents', () => {
     expect(refs[0].summary?.startsWith('Script ref')).toBe(true);
   });
 
-  it('flags 355 Script bare numeric match as possible confidence', () => {
+  it('ignores 355 Script bare numeric literal without map idiom', () => {
     const evt = event(2, [page([cmd(355, ['some_var = 5'])])]);
-    const refs = extractMapReferencesFromEvents(1, [evt], new Set([5]));
-    expect(refs).toHaveLength(1);
-    expect(refs[0].confidence).toBe('possible');
+    expect(extractMapReferencesFromEvents(1, [evt], new Set([5]))).toEqual([]);
   });
 
   it('flags 108 Comment text references', () => {
@@ -171,13 +167,13 @@ describe('extractMapReferencesFromEvents', () => {
     expect(refs[0].summary?.startsWith('Comment ref')).toBe(true);
   });
 
-  it('handles 408 / 655 continuation codes the same as their primary codes', () => {
+  it('handles 408 / 655 continuation codes (each chunk needs its own idiom)', () => {
     const evt = event(4, [
       page([
-        cmd(108, ['First line referencing 5']),
-        cmd(408, ['Continued comment 7']),
-        cmd(355, ['x = 5']),
-        cmd(655, ['y = 7']),
+        cmd(108, ['note Map ID 5']),
+        cmd(408, ['also Map ID 7']),
+        cmd(355, ['pbDirectTransfer(5, 0, 0)']),
+        cmd(655, ['$game_temp.player_new_map_id = 7']),
       ]),
     ]);
     const refs = extractMapReferencesFromEvents(1, [evt], new Set([5, 7]));

@@ -962,14 +962,11 @@ end
 #   Marshal-dumped Array of [section_id, name, deflated_source_bytes]
 #   where deflated_source_bytes is `Zlib.deflate(source_text)`.
 #
-# Strategy (mirrors `scanTextForMapIds` in src/shared/mapEventReferences.ts so the
-# two scanners agree on confidence semantics):
+# Strategy (mirrors `scanTextForMapIds` in src/shared/mapEventReferences.ts):
 #   - For each section: inflate, walk line-by-line.
-#   - For each line: regex `\b\d+\b` against candidate ids.
-#   - Confidence is 'high' when any caller-provided idiom substring is present in
-#     the line (case-insensitive), else 'possible'. The idiom list comes from
-#     stdin so the canonical list lives in TS (MAP_ID_IDIOMS); we don't hardcode
-#     it twice.
+#   - Only lines containing any caller-provided idiom substring (case-insensitive) are scanned.
+#   - On those lines only: regex `\b\d+\b` against candidate ids.
+#   - Every emitted match has confidence 'high' (idiom context required).
 #
 # Encoding: inflated bytes get forced to UTF-8 with invalid sequences replaced,
 # so Windows-style encodings or stray bytes don't crash the regex. Section-level
@@ -1038,7 +1035,7 @@ def scan_scripts_for_map_ids(file_path)
 
     text.each_line.with_index do |line, line_idx|
       idiom_hit = idioms_lower.any? { |idiom| !idiom.empty? && line.downcase.include?(idiom) }
-      confidence = idiom_hit ? 'high' : 'possible'
+      next unless idiom_hit
 
       line.scan(/\b(\d+)\b/) do |captures|
         n = captures[0].to_i
@@ -1050,7 +1047,7 @@ def scan_scripts_for_map_ids(file_path)
           sectionName: section_name,
           line: line_idx + 1,
           targetMapId: n,
-          confidence: confidence,
+          confidence: 'high',
           snippet: snippet
         }
       end

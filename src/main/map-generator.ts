@@ -26,8 +26,8 @@ export interface ScriptScanMatch {
   line: number;
   /** The candidate id that this line literal matched. */
   targetMapId: number;
-  /** 'high' = a `MAP_ID_IDIOMS` token appeared on the same line; 'possible' = bare numeric. */
-  confidence: 'high' | 'possible';
+  /** Always 'high' — only idiom-context lines are scanned (see marshal_handler.rb). */
+  confidence: 'high';
   /** Trimmed line for the modal references list (capped). */
   snippet: string;
 }
