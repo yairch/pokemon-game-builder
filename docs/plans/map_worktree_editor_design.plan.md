@@ -20,6 +20,8 @@ This document **concludes** the product and UX decisions for upgrading the **Map
 
 **Suggested placement in roadmap:** Ship **after [GW — Workbench rework](./gui_editor_mvp_roadmap.md#gw--workbench-rework-between-g0-and-g1)** (or overlapping late GW) so the tree lives in its **final pane geometry**. Traceability: main plan todo **`pr-gw-map-tree`**.
 
+**Implementation status:** ✅ **Shipped** (PRs #16–#18 on `master`). v1 goals above are implemented; deferred items remain in **Non-goals (v1)** and § Future expansion.
+
 ---
 
 ## Goals
@@ -169,3 +171,4 @@ Not a full API spec — parent plans own PR breakdown.
 |------|--------|
 | 2026-05-13 | Initial design conclusion wired to main MVP plan + GUI roadmap |
 | 2026-05-15 | Delete scan: actionable-only blocking (no bare-literal noise); modal copy principles; § Future expansion for variable/runtime-aware scan; **force delete non‑goal** |
+| 2026-05-22 | GW+ implementation merged (#16–#18); marked complete in main MVP plan + GUI roadmap |

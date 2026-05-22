@@ -25,10 +25,10 @@ todos:
     status: completed
   - id: pr-gw
     content: "GW: Workbench layout rework — sticky top bar (project/AI/template/tests/help), horizontal Map Workbench | Chat split, draggable dividers; details in gui_editor_mvp_roadmap §GW"
-    status: pending
+    status: completed
   - id: pr-gw-map-tree
     content: "GW+: Interactive map tree — @dnd-kit reorder/reparent, MapInfos/System Ruby writes, delete with full integrity preflight + proactive start-map warning UI (see map_worktree_editor_design.plan.md)"
-    status: pending
+    status: completed
   - id: pr-1-2
     content: "PR 1.2: Tileset vision (send tileset image to Claude/Gemini with prompts)"
     status: pending
@@ -74,7 +74,7 @@ isProject: false
 
 **GUI / workbench companion:** [`gui_editor_mvp_roadmap.md`](./gui_editor_mvp_roadmap.md) — owns layout, preview parity, and editor UX. This plan owns Ruby bridge, AI pipelines, validation, and agent architecture; **use the companion for GUI phase order and scope.**
 
-**Interactive map tree (GW+):** [`map_worktree_editor_design.plan.md`](./map_worktree_editor_design.plan.md) — drag-drop MapInfos hierarchy, delete + scan pipeline, System integrity; tracked as todo **`pr-gw-map-tree`**.
+**Interactive map tree (GW+):** [`map_worktree_editor_design.plan.md`](./map_worktree_editor_design.plan.md) — **merged (#16–#18)**; todo **`pr-gw-map-tree`** complete.
 
 ### Sequencing (main plan and GUI companion)
 
@@ -82,12 +82,12 @@ Single source of truth for GUI ordering is **[§ MVP phases (GUI track)](./gui_e
 
 1. **Phase 0** (this doc) — foundation PRs **0.1 → 0.2 → 0.3**
 2. **PR 1.1** (this doc) — canvas map preview base
-3. **G0** (companion [`§G0`](./gui_editor_mvp_roadmap.md#g0--workbench-shell-pr-11-follow-ups)) — **PR-G0-1 → PR-G0-2 → PR-G0-3** (preview parity inside the legacy single-column shell)
-4. **GW** (companion [`§GW`](./gui_editor_mvp_roadmap.md#gw--workbench-rework-between-g0-and-g1)) — **Workbench rework** (multi-pane layout, top bar, Workbench \| Chat split). Companion places GW **after G0** and **before G1**; tracked here as todo **`pr-gw`**
-5. **GW+ map tree** — interactive hierarchy + delete integrity (todo **`pr-gw-map-tree`**); spec [`map_worktree_editor_design.plan.md`](./map_worktree_editor_design.plan.md). Intended **after or late-overlap with GW** so pane layout is stable.
-6. **PR 1.2** (this doc) — tileset vision; may **overlap or follow GW** (companion traceability: keep palette/preview aligned); does not replace GW
+3. **G0** (companion [`§G0`](./gui_editor_mvp_roadmap.md#g0--workbench-shell-pr-11-follow-ups)) — **PR-G0-1 → PR-G0-2 → PR-G0-3**. **Merged (#11–#13).**
+4. **GW** (companion [`§GW`](./gui_editor_mvp_roadmap.md#gw--workbench-rework-between-g0-and-g1)) — **Workbench rework** (multi-pane layout, top bar, Workbench \| Chat split). **Merged (#15).**
+5. **GW+ map tree** — interactive hierarchy + delete integrity; spec [`map_worktree_editor_design.plan.md`](./map_worktree_editor_design.plan.md). **Merged (#16–#18).**
+6. **PR 1.2** (this doc) — tileset vision (**next**); companion traceability: keep palette/preview aligned
 7. **Phase 2+** (this doc) — semantic tiles, events, town pipeline, agent architecture — continue on **`master`** as below
-8. **G1** (companion) — preview fidelity (e.g. RMXP-style autotiles) **after GW**
+8. **G1** (companion) — preview fidelity (e.g. RMXP-style autotiles); may proceed in parallel with **PR 1.2**
 9. **G2+** (companion) — editing, deeper workbench integration — post-MVP core per companion
 
 For a one-page mapping from main-plan PRs to GUI milestones, see **[§ Traceability to main MVP plan](./gui_editor_mvp_roadmap.md#traceability-to-main-mvp-plan)** in the companion.
@@ -104,14 +104,16 @@ The project is a working POC with:
 - Tileset Inspector modal with image + ID overlay
 - **Vitest** test infrastructure (main + renderer); chat-to-map pipeline registers maps in `MapInfos`; tile patching now preserves events (`patch_map_tiles`)
 - **Canvas map preview (Phase 1.1, base PR)** rendering 3 layers from a real tileset image with autotile static frame, zoom/pan, hover coordinates, and post-test/chat wiring
+- **G0 preview parity:** Maps tree + `read-map` selection, event markers, layer strip (dim/focus), toggleable grid
+- **GW workbench:** Sticky top bar (project / AI / template / tests / help), horizontal **Map Workbench \| Chat** split with draggable dividers, instructions popover
+- **GW+ interactive map tree:** `@dnd-kit` reorder/reparent with MapInfos persistence, start-map warning banner, right-click **Delete** with full integrity preflight (actionable-only blocking), confirmation modal + start-map picker
 - Map template picker dropdown and shared map list
 
 **Open / known limitations**:
 
-- AI has no semantic tile context in chat prompts (Phase 2 owns this).
+- AI has no semantic tile context in chat prompts (Phase 2 owns this); **PR 1.2 (tileset vision)** is the next planned milestone.
 - Map preview uses **static frame 0** for autotiles — not RMXP-composed water/edges (tracked in GUI roadmap **G1**).
-- GUI: **G0** complete (map tree, `read-map` preview, markers, layer strip, grid) still sits in a **single scrolling column**; **GW** (multi-pane workbench) is the next GUI milestone — see companion [`§GW`](./gui_editor_mvp_roadmap.md#gw--workbench-rework-between-g0-and-g1) and todo **`pr-gw`** above. **Interactive tree** (drag-drop, delete, integrity scan, start-map banner) is specified in [`map_worktree_editor_design.plan.md`](./map_worktree_editor_design.plan.md) (**`pr-gw-map-tree`**).
-- **Map delete (tree context menu)** runs integrity preflight before confirm; blocking references are **actionable-only** (engine Transfer Player literals plus idiom-linked script/comment matches — details and modal policy in [`map_worktree_editor_design.plan.md`](./map_worktree_editor_design.plan.md)).
+- **Map delete (tree context menu)** runs integrity preflight before confirm; blocking references are **actionable-only** (engine Transfer Player literals plus idiom-linked script/comment matches — details and modal policy in [`map_worktree_editor_design.plan.md`](./map_worktree_editor_design.plan.md)). Residual risk from unrelated script literals is accepted for v1 (see design doc § Future expansion).
 
 ---
 
@@ -166,11 +168,11 @@ Replace the metadata-only `[MapPreview.tsx](src/renderer/components/MapPreview.t
 - Integration test: render a known small map (e.g. 5x5) to canvas, verify canvas dimensions and that draw calls occur for non-zero tiles
 - Wire into the post-test and post-chat flows so the preview updates after map generation
 
-Follow-up preview parity lives in **`PR-G0-1`** through **`PR-G0-3`** (scheduled and detailed in [`gui_editor_mvp_roadmap.md`](./gui_editor_mvp_roadmap.md) §G0). Deliver in that order, then **GW** ([`§GW`](./gui_editor_mvp_roadmap.md#gw--workbench-rework-between-g0-and-g1)) before companion **G1** (preview fidelity).
+Follow-up preview parity lives in **`PR-G0-1`** through **`PR-G0-3`** (merged; detailed in [`gui_editor_mvp_roadmap.md`](./gui_editor_mvp_roadmap.md) §G0). **GW** and **GW+** are merged; companion **G1** (preview fidelity) may proceed in parallel with **PR 1.2** below.
 
-### PR 1.2 -- Tileset Image to AI (Vision)
+### PR 1.2 -- Tileset Image to AI (Vision) *(next)*
 
-Send the tileset image alongside map-generation prompts so the AI can see what tiles look like. Schedule **after G0**; **GW** can land before, after, or in parallel — prefer finishing **GW** early so vision + chat share the workbench layout ([traceability table](./gui_editor_mvp_roadmap.md#traceability-to-main-mvp-plan)).
+Send the tileset image alongside map-generation prompts so the AI can see what tiles look like. **GW** is merged so vision + chat share the workbench layout ([traceability table](./gui_editor_mvp_roadmap.md#traceability-to-main-mvp-plan)).
 
 - Extend `IAIService.chat` signature: `chat(message: string, context: any, images?: string[])` where images are base64 data URLs
 - Update `[ClaudeAIService](src/main/ai-service-claude.ts)` to send images via the `content` array (Anthropic vision API: `{ type: "image", source: { type: "base64", ... } }`)
