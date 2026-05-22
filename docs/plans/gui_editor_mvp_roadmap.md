@@ -9,7 +9,7 @@ isProject: false
 
 This document **extends** the technical MVP phases in [`mvp_implementation_plan_a41c92e4.plan.md`](./mvp_implementation_plan_a41c92e4.plan.md). That plan owns **Ruby bridge, AI, validation, and data pipelines**. This plan owns **layout, preview parity, and editor UX** toward a **modern, AI-integrated game builder** that eventually reduces or removes the need to open RPG Maker XP.
 
-**Map tree editing (GW+)** is specified in [`map_worktree_editor_design.plan.md`](./map_worktree_editor_design.plan.md) (drag-drop hierarchy, delete + integrity scan, proactive `start_map_id` warning); main-plan todo **`pr-gw-map-tree`**.
+**Map tree editing (GW+)** shipped in PRs #16–#18; spec in [`map_worktree_editor_design.plan.md`](./map_worktree_editor_design.plan.md). Main-plan todo **`pr-gw-map-tree`** is complete.
 
 ## North star
 
@@ -26,16 +26,17 @@ This document **extends** the technical MVP phases in [`mvp_implementation_plan_
 
 ## Current baseline (this repo)
 
-- Map preview canvas with pan/zoom and tileset decoding (regular + autotile slots).
-- Project selector, AI chat, map tests, compile POC.
-- Tileset ID modal from project panel.
-- Single scrolling left column; instructions panel, configuration form, and preview all stack vertically.
+- **Multi-pane workbench (GW):** Sticky top bar, **Map Workbench \| Chat** horizontal split, draggable dividers, instructions popover.
+- Map preview canvas with pan/zoom, layer strip, grid overlay, and event markers (G0).
+- **Interactive Maps tree (GW+):** `@dnd-kit` reorder/reparent, MapInfos persistence, start-map warning banner, right-click delete with integrity preflight.
+- Project selector, AI chat, map tests, compile POC; template map picker in header.
+- Tileset Inspector from preview header (previewed map) or template picker.
 
 ## MVP phases (GUI track)
 
-### G0 — Workbench shell (PR 1.1 follow-ups)
+### G0 — Workbench shell (PR 1.1 follow-ups) ✅ merged (#11–#13)
 
-PR 1.1 base shipped the canvas (3 layers, autotile static frame, zoom/pan, hover, post-generate wiring). The remaining G0 work is split into **three PR-sized merges** (`PR-G0-1` … `PR-G0-3`); see main plan YAML `pr-g0-1`, `pr-g0-2`, `pr-g0-3`.
+PR 1.1 base shipped the canvas (3 layers, autotile static frame, zoom/pan, hover, post-generate wiring). G0 shipped as **three PR-sized merges** (`PR-G0-1` … `PR-G0-3`); see main plan YAML `pr-g0-1`, `pr-g0-2`, `pr-g0-3`.
 
 #### PR-G0-1 — Maps tree + preview from `read-map` + inspector trigger
 
@@ -80,7 +81,7 @@ PR 1.1 base shipped the canvas (3 layers, autotile static frame, zoom/pan, hover
 
 **Ordering:** PR-G0-1 → PR-G0-2 → PR-G0-3 (tree + `read-map` plumbing first; markers before Events focus mode matters).
 
-### GW — Workbench rework (between G0 and G1)
+### GW — Workbench rework (between G0 and G1) ✅ merged (#15)
 
 Goal: replace the single scrolling left column with a **multi-pane, modern workbench** so the map preview, tree, and chat are all first-class and resizable.
 
@@ -120,7 +121,16 @@ Goal: replace the single scrolling left column with a **multi-pane, modern workb
 - **Two visible workspaces** (Workbench / Chat) instead of a tall scrolling column — matches IDE/editor mental models.
 - **Subtle iconography** for power-user actions (Tileset Inspector) so the canvas stays the visual focus.
 
-### G1 — Preview fidelity (next after GW)
+### GW+ — Interactive map tree ✅ merged (#16–#18)
+
+Spec: [`map_worktree_editor_design.plan.md`](./map_worktree_editor_design.plan.md); main-plan todo **`pr-gw-map-tree`**.
+
+- **`@dnd-kit`** reorder/reparent with MapInfos / System Ruby writes
+- **Start-map warning banner** when `start_map_id` is missing or invalid
+- **Right-click Delete** with stepped integrity preflight, confirmation modal, start-map picker
+- **Actionable-only** blocking on delete scan (Transfer Player literals + idiom-linked script matches)
+
+### G1 — Preview fidelity *(next)*
 
 - **Autotile render parity:** Implement RMXP-style autotile composition (48 pattern indices + neighbor rules) per Essentials autotile sheets — likely a dedicated module + golden PNG tests.
 - **Event graphics (optional MVP+):** Draw first page `graphic` (charset / tile graphic) when data available; fallback to markers until charset assets are resolved.
@@ -151,18 +161,18 @@ Goal: replace the single scrolling left column with a **multi-pane, modern workb
 | Event marker | Edit event, delete, copy event id *(future)* |
 | Palette tile | Set as current tile, copy numeric id *(future)* |
 
-**MVP note:** Canvas/palette/event menus remain future work. **Tree:** right-click **Delete** + **`@dnd-kit` reorder/reparent** are in scope for **`pr-gw-map-tree`** (GW+); see design doc — not required for GW layout-only PR unless intentionally batched.
+**MVP note:** Canvas/palette/event menus remain future work (G2). **Tree** delete + drag-drop shipped in GW+ (#16–#18).
 
 ## Traceability to main MVP plan
 
-| Main plan item | GUI companion |
-|----------------|---------------|
-| PR 1.1 Canvas preview (base merged) | G0: PR-G0-1 (tree + read-map + inspector) → PR-G0-2 (markers) → PR-G0-3 (layer strip + grid) |
-| GUI workbench rework | GW: top bar config, draggable Workbench / Chat split, instructions popover |
-| **`pr-gw-map-tree`** Interactive map tree | [`map_worktree_editor_design.plan.md`](./map_worktree_editor_design.plan.md): `@dnd-kit`, MapInfos write, delete scan, System / start-map banner |
-| PR 1.2 Vision | Palette + preview stay visually aligned |
-| Phase 3 Events | G0 markers → G1/G2 full event UX |
-| Phase 4 Validation | G3 warnings surfaced in workbench status bar |
+| Main plan item | GUI companion | Status |
+|----------------|---------------|--------|
+| PR 1.1 Canvas preview (base) | G0: PR-G0-1 → PR-G0-2 → PR-G0-3 | ✅ #9–#13 |
+| GUI workbench rework | GW: top bar, Workbench / Chat split, instructions popover | ✅ #15 |
+| **`pr-gw-map-tree`** Interactive map tree | [`map_worktree_editor_design.plan.md`](./map_worktree_editor_design.plan.md) | ✅ #16–#18 |
+| PR 1.2 Vision *(next)* | Palette + preview stay visually aligned | pending |
+| Phase 3 Events | G0 markers → G1/G2 full event UX | — |
+| Phase 4 Validation | G3 warnings surfaced in workbench status bar | — |
 
 ## Review cadence
 
