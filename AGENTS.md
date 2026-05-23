@@ -1,171 +1,157 @@
 # Agent instructions — Pokemon Game Builder
 
-Read **[`docs/VISION.md`](docs/VISION.md)** first for product intent and MVP bar. This file tells coding agents how to make decisions aligned with that vision.
+Read **[`docs/VISION.md`](docs/VISION.md)** first. This file covers build-time decisions; runtime prompts live in **[`docs/prompts/`](docs/prompts/)** (developer-maintained — not user-custom skills).
 
 ---
 
 ## What we are building
 
-An **AI-first Pokémon Essentials / RPG Maker XP companion**: chat-driven world generation that writes real project files, with a strong **in-app workbench** (preview, map tree, chat) so users rarely need RMXP for iteration.
+AI-first Essentials companion: chat-driven maps and events on disk, with in-app preview and map tree for iteration without RMXP.
 
-**MVP success:** Game Bible saved in project → user generates **one playable starter town** (exterior + 3 house interiors + lab) matching the bible → patch-first chat edits → Essentials smoke checklist passes.
+**Map POC:** user prompt → tileset-aware, layer-correct map with patch-first edits.
 
-**Next product milestone (v1.1):** mini-region with connected maps (town + routes/interiors).
+**Full MVP:** playable starter town (exterior + 4 interiors), neighbor-aware autotiles, events (warps, NPC dialogue, face-on-interact), validation, smoke checklist.
+
+**v1.1:** mini-region with connected maps.
 
 ---
 
 ## Priority order
 
-When trade-offs arise, prefer:
+1. Playable, valid RXData on disk  
+2. In-app debug loop over RMXP  
+3. Patch-first iteration; regen only on explicit start over  
+4. Programmatic execution over LLM file writes  
+5. Automated tile vocabulary over hand-labeled IDs  
+6. User intent and patch consistency over generic “genre” heuristics  
+7. Small testable PRs per engineering plan  
 
-1. **Playable output** on disk (valid RXData, MapInfos, warps, walkable layout)  
-2. **In-app debug loop** (preview, tree, delete, validation) over requiring RMXP  
-3. **Patch-first iteration** over full regen  
-4. **Programmatic execution** over LLM-direct file mutation  
-5. **Automated tile semantics** (cache, heuristics, map mining) over hand-maintained tile ID lists  
-6. **Small, testable PRs** per [`docs/plans/mvp_implementation_plan_a41c92e4.plan.md`](docs/plans/mvp_implementation_plan_a41c92e4.plan.md)
+---
+
+## Suggested build order
+
+Align new work with VISION until the implementation plan is updated:
+
+1. Tileset vision → vocabulary cache  
+2. `docs/prompts/` + orchestrator  
+3. Game Bible + `.pgb/`  
+4. Phase 3 events (NPC presence, face-on-interact)  
+5. Neighbor-aware autotile executor (phased; MVP-complete)  
+6. Validation + must-have checklist  
+7. Template seed UX  
+
+**Post-MVP:** richer NPC systems, intent review automation, full gameplay doc, tutorials, legal principles, mod-aware AI.
 
 ---
 
 ## Architecture — propose vs execute
 
-**Agents propose; the app executes.**
+| Layer | Role |
+|-------|------|
+| **Specialists** | Read context; output `TownPlan`, `MapPatch`, `EventPatch`, `EditPatch` |
+| **Orchestrator** | Route intent; call specialists |
+| **Executor** | Validate, neighbor-aware terrain, apply patches, write files, refresh preview |
+| **App QA** | Structural validator, smoke checklist — not LLM tools |
 
-| Layer | Responsibility |
-|-------|----------------|
-| **AI specialists** | Read context; output structured JSON (`TownPlan`, `MapPatch`, `EventPatch`, `EditPatch`) |
-| **Orchestrator** | Route chat intent; call specialists; hand proposals to executor |
-| **Executor** | Validate, merge patches, write maps/events/MapInfos, create interiors from plan metadata, refresh preview |
-| **App QA** | Deterministic validator, Essentials smoke checklist — **not** exposed as LLM tools |
+Agents do **not** paint tiles, create maps, render snapshots, or run Game.exe.
 
-Do **not** add AI tools that directly paint tiles, create map files, render preview snapshots, or run smoke tests. Preview updates **after** executor writes.
+### Specialists
 
-### Specialist roles (MVP)
+- **Planner** — bible + prompt → `TownPlan`; story consistency when bible exists.  
+- **Map composer** — plan + vocabulary → patches.  
+- **Event writer** — warps, dialogue, turn-toward-player on interact.
 
-- **Planner** — Game Bible → `TownPlan`. **Owns story consistency** in MVP.  
-- **Map composer** — plan + vocabulary → tile/template **intent** in patches.  
-- **Event writer** — plan → warps, NPC pages, dialogue patches.
+### Read tools
 
-Downstream agents receive **plan + relevant excerpts**, not a mandate to re-interpret the whole bible (alternative: full-bible-per-agent is a future experiment).
+`read_game_bible`, `read_project_context`, `read_map_summary`, `get_tile_vocabulary`, `get_object_templates`, `read_town_plan`.
 
-### Agent read tools (appropriate)
+### Prompt library
 
-- `read_game_bible`, `write_game_bible`  
-- `read_project_context`, `read_map_summary`  
-- `get_tile_vocabulary`, `get_object_templates`  
-- `read_town_plan`, pinned plans  
-
-### Executor responsibilities (code)
-
-- `apply_*_patch`, `ensure_interior_maps` from plan specs, `register_maps_in_infos`  
-- Vocabulary build: heuristics → vision cache → map-mined templates → `.pgb/cache/`  
+```
+docs/prompts/
+  orchestrator.md
+  planner.md
+  map-composer.md
+  event-writer.md
+  shared-context.md
+```
 
 ---
 
 ## Tile & asset rules
 
-- **No hand-built `tile-vocabulary.ts`** with manually labeled IDs. Build vocabulary **programmatically** per tileset in the open project.  
-- MVP uses **tilesets already in the project** (outdoor + indoor). External/custom tilesets: same cache pipeline when added.  
-- **Vision:** attach tileset images via multimodal API in app code (PR 1.2+); cache labels. Not a separate MCP or CV service for MVP.  
-- Map composer outputs **template/stamp intent**; executor resolves to tile IDs for the active tileset.
+- Programmatic vocabulary per tileset → `.pgb/cache/`.  
+- Vision via multimodal API (PR 1.2+); cache labels; do not resend full images every turn.  
+- **Neighbor-aware autotiles** in executor for MVP-complete terrain.  
+- Stock Essentials semantics; **do not edit plugins/scripts** in MVP.  
+- Map composer outputs stamp intent; executor resolves tile IDs.
 
 ---
 
-## Project & metadata conventions
+## Project metadata
 
-- **One folder = one game.** New game copies golden template into a new directory.  
-- Golden template: `templates/essentials-v1/` — seeded from **user's Essentials install**, not committed Essentials assets in repo.  
-- Project metadata under **`.pgb/`**:  
-  - `game-bible.json` (structured JSON, seven required sections — see VISION.md)  
-  - `history/`, `cache/`, `plans/`, `sessions/` (future)  
+- `.pgb/game-bible.json` — eight sections including `gameplayNotes` (see VISION.md).  
+- Golden template seeded from user's Essentials install.  
+- One folder = one game.
 
 ---
 
 ## Chat & iteration
 
-- Default: **EditPatch** on current map/plan.  
-- Full regen only when user explicitly starts over.  
-- Support **pinned TownPlan** for reproducibility.  
-- Multi-tab chat sessions: future; design `.pgb/sessions/` accordingly but do not block MVP on it.  
+- Default **EditPatch**; facing/event tweaks are event patches, not full regen.  
+- Pinned TownPlan for reproducibility.  
+- Ground turns in prompt + TownPlan + map state (+ bible when present).
 
 ---
 
 ## Prompt engineering
 
-When designing or changing system prompts, agent prompts, or context assembly, optimize for **both** intent fidelity and cost/latency.
+Optimize for **intent fidelity** and **token cost**.
 
-### Quality, consistency, and accuracy vs user intent
-
-- **Ground every generation turn** in the Game Bible, active TownPlan, and current map state — not the full chat transcript alone.  
-- **Specialist prompts stay narrow:** Planner owns story; Map composer owns layout/tiles; Event writer owns dialogue/warps. Avoid one prompt that mixes all responsibilities.  
-- **Structured outputs** (JSON schemas for `TownPlan`, patches) with validation before execution — reject or retry on schema drift.  
-- **Patch-first iteration** preserves user-approved work; edits should express *deltas* aligned with the latest user message, not silent full rewrites.  
-- **Planner owns story consistency** in MVP; downstream agents get plan + relevant excerpts to reduce contradictory reinterpretation.  
-- **Deterministic executor + validator** catch inaccuracies the model cannot self-certify (tile IDs, bounds, warp targets, checklist items from the bible).  
-- **Pinned TownPlans** and bible snapshots support reproducibility when tuning prompts.  
-- Measure against **user intent** explicitly: bible must-haves, smoke checklist, and preview — not model confidence alone.
-
-### Performance and token optimization
-
-- **Do not resend full tileset images** every chat turn; use one-time vision labeling → `.pgb/cache/` vocabulary and template summaries.  
-- **Prefer compact context:** map summaries (size, tileset, event list) over full `layers` arrays unless the task is tile-level editing.  
-- **Send excerpts, not dumps:** relevant bible sections and plan slices per specialist, not the entire project context every call.  
-- **Route before you prompt:** orchestrator classifies intent (new town vs patch vs bible update) and invokes only the specialists needed.  
-- **Cache and reuse** read-tool results within a generation pipeline (vocabulary, templates, map summary for the active selection).  
-- **Separate models/limits by role** when useful (e.g. short classifier vs full planner) — tune in implementation, not in vision docs.  
-- **Temperature and sampling knobs** are per-agent implementation details; lower variance for structural outputs (plans, patches), higher only where creative prose is isolated and validated.
-
-When quality and token cost conflict, prefer **narrower context + stronger structure + executor validation** over stuffing more text into a monolith prompt.
+- Narrow specialist prompts; structured JSON outputs; validator before write.  
+- Compact map summaries; bible/plan excerpts per specialist.  
+- Orchestrator routes before prompting.  
+- Cache vocabulary and templates within a pipeline.  
+- LLM sampling settings belong in prompt-engineering tasks, not vision docs.
 
 ---
 
 ## GUI track
 
-Layout, preview fidelity, and editor UX: [`docs/plans/gui_editor_mvp_roadmap.md`](docs/plans/gui_editor_mvp_roadmap.md).  
-G0, GW, GW+ are **done**. Next GUI items (G1 autotile parity) may parallel PR 1.2 / Phase 2.
-
-Keep preview as **read-map source of truth**; do not duplicate Ruby event logic in the renderer.
+G0, GW, GW+ done. **G1 autotile preview parity** can parallel neighbor-aware executor work.
 
 ---
 
-## Testing expectations
+## Testing
 
-- **Unit tests** for pure logic (patches, validation, vocabulary helpers).  
-- **Integration tests** for Ruby bridge and pipelines (mock AI where needed).  
-- MVP features that claim "playable" must align with the **smoke checklist** in VISION.md (manual or semi-automated Essentials run).  
-- Every PR: small scope, tests where behavior is non-trivial.
-
----
-
-## Non-goals (do not expand scope without user ask)
-
-- MCP servers or external agent protocols  
-- In-app game engine / walk mode for MVP  
-- Distributing Pokémon/IP assets in the repo  
-- Monetization, trademark, or credential systems in MVP code  
-- Force delete, preflight scan cache, undo toasts (per map tree design doc)  
-- Monolith single-prompt map+event generation as the primary architecture  
+- Unit tests for patches, validation, autotile filler, vocabulary helpers.  
+- Integration tests for bridge and pipelines.  
+- “Playable” claims require smoke checklist in VISION.md.
 
 ---
 
-## Engineering plans & drift
+## Non-goals (unless user asks)
 
-Implementation PR order: [`docs/plans/mvp_implementation_plan_a41c92e4.plan.md`](docs/plans/mvp_implementation_plan_a41c92e4.plan.md).
+- MCP servers  
+- In-app game engine  
+- Bundled IP assets  
+- Monetization / trademark implementation  
+- User-custom prompt packs  
+- Tutorial/onboarding investment pre-MVP  
+- Monolith single-prompt generation  
+- Plugin/mod authoring  
 
-When the plan conflicts with VISION.md, **VISION wins** — update the plan in a docs PR. Notable realignments already decided:
+---
 
-- Phase 2.1 → automated vocabulary cache, not hand-maintained dictionary  
-- Phase 5 → specialist agents + executor, not raw `tool_use` that writes files directly  
-- Next engineering focus after GUI foundation: **PR 1.2 vision**, **Game Bible**, **agent orchestrator**, **Phase 3 events**, **validation**, toward starter-town MVP  
+## Plans
+
+When **`docs/plans/mvp_implementation_plan_a41c92e4.plan.md`** conflicts with VISION.md, **VISION wins**. Plan YAML updates happen on explicit user request.
 
 ---
 
 ## Code conventions
 
-- Match existing patterns in `handlers.ts`, `map-generator.ts`, bridge, renderer workbench.  
-- Minimize diff scope; no drive-by refactors.  
-- Conventional commits: `feat:`, `fix:`, `test:`, `docs:`, etc.  
-- Branch from `master`; do not commit secrets or Essentials asset bundles.
+Match existing handlers, bridge, workbench patterns. Minimal diffs. Conventional commits. Branch from `master`.
 
 ---
 
@@ -173,7 +159,7 @@ When the plan conflicts with VISION.md, **VISION wins** — update the plan in a
 
 | Resource | Path |
 |----------|------|
-| Vision & MVP | [`docs/VISION.md`](docs/VISION.md) |
-| MVP PR plan | [`docs/plans/mvp_implementation_plan_a41c92e4.plan.md`](docs/plans/mvp_implementation_plan_a41c92e4.plan.md) |
+| Vision | [`docs/VISION.md`](docs/VISION.md) |
+| Prompts | [`docs/prompts/`](docs/prompts/) |
+| MVP plan | [`docs/plans/mvp_implementation_plan_a41c92e4.plan.md`](docs/plans/mvp_implementation_plan_a41c92e4.plan.md) |
 | GUI roadmap | [`docs/plans/gui_editor_mvp_roadmap.md`](docs/plans/gui_editor_mvp_roadmap.md) |
-| Map tree design | [`docs/plans/map_worktree_editor_design.plan.md`](docs/plans/map_worktree_editor_design.plan.md) |
