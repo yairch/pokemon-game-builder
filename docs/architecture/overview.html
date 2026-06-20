@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Pokemon Game Builder — Architecture Overview</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    :root {
+      --fig-purple: #7c3aed;
+      --fig-blue: #2563eb;
+      --fig-green: #059669;
+      --fig-orange: #ea580c;
+      --fig-pink: #db2777;
+      --fig-gray: #64748b;
+      --fig-bg: #f8fafc;
+      --fig-card: #ffffff;
+      --fig-border: #e2e8f0;
+    }
+    body { background: var(--fig-bg); }
+    .fig-card {
+      background: var(--fig-card);
+      border: 2px solid var(--fig-border);
+      border-radius: 12px;
+      box-shadow: 0 1px 3px rgba(15, 23, 42, 0.06);
+    }
+    .fig-sticky {
+      border-radius: 8px;
+      padding: 12px 14px;
+      font-size: 0.875rem;
+      line-height: 1.35;
+      border: 2px solid;
+      min-width: 0;
+      word-wrap: break-word;
+    }
+    .connector { stroke: #94a3b8; stroke-width: 2; fill: none; marker-end: url(#arrow); }
+    .erd-table {
+      border: 2px solid #334155;
+      border-radius: 8px;
+      overflow: hidden;
+      background: white;
+      min-width: 0;
+    }
+    .erd-header {
+      background: #1e293b;
+      color: white;
+      font-weight: 600;
+      padding: 8px 12px;
+      font-size: 0.875rem;
+    }
+    .erd-row {
+      padding: 6px 12px;
+      font-size: 0.8125rem;
+      border-top: 1px solid #e2e8f0;
+      font-family: ui-monospace, monospace;
+    }
+    .erd-pk { color: #b45309; font-weight: 600; }
+    .erd-fk { color: #2563eb; }
+    .section-anchor { scroll-margin-top: 1.5rem; }
+    @media (max-width: 768px) {
+      .layer-grid { grid-template-columns: 1fr !important; }
+      .erd-grid { grid-template-columns: 1fr !important; }
+    }
+  </style>
+</head>
+<body class="text-slate-800 antialiased">
+  <div class="max-w-6xl mx-auto px-4 sm:px-6 py-8 sm:py-12 space-y-12">
+
+    <!-- Header -->
+    <header class="space-y-3">
+      <p class="text-sm font-medium text-violet-700 uppercase tracking-wide">Architecture reference</p>
+      <h1 class="text-3xl sm:text-4xl font-bold text-slate-900">Pokemon Game Builder</h1>
+      <p class="text-lg text-slate-600 max-w-3xl">
+        AI-first companion for RPG Maker XP + Pokémon Essentials. Local app writes real <code class="bg-slate-100 px-1 rounded">.rxdata</code> files; React UI previews and iterates without opening RMXP daily.
+      </p>
+      <nav class="flex flex-wrap gap-2 text-sm pt-2">
+        <a href="#stack" class="px-3 py-1 rounded-full bg-white border border-slate-200 hover:border-violet-300">Stack</a>
+        <a href="#layers" class="px-3 py-1 rounded-full bg-white border border-slate-200 hover:border-violet-300">Layers</a>
+        <a href="#components" class="px-3 py-1 rounded-full bg-white border border-slate-200 hover:border-violet-300">Components</a>
+        <a href="#entities" class="px-3 py-1 rounded-full bg-white border border-slate-200 hover:border-violet-300">Entities</a>
+        <a href="#filesystem" class="px-3 py-1 rounded-full bg-white border border-slate-200 hover:border-violet-300">File structure</a>
+        <a href="#remote" class="px-3 py-1 rounded-full bg-white border border-slate-200 hover:border-violet-300">Local vs remote</a>
+        <a href="#cqrs" class="px-3 py-1 rounded-full bg-white border border-slate-200 hover:border-violet-300">CQRS</a>
+      </nav>
+    </header>
+
+    <!-- Stack decisions -->
+    <section id="stack" class="section-anchor space-y-6">
+      <h2 class="text-2xl font-bold">Why this stack?</h2>
+      <div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        <div class="fig-card p-5 space-y-2">
+          <div class="fig-sticky border-violet-300 bg-violet-50 text-violet-900 font-semibold">Electron + React</div>
+          <p class="text-sm text-slate-600">Desktop app needs filesystem access, native dialogs, and long sessions. Electron wraps Chromium + Node; React is your TS UI skill from RN. Together: one codebase, local-first, no server to deploy for MVP.</p>
+        </div>
+        <div class="fig-card p-5 space-y-2">
+          <div class="fig-sticky border-blue-300 bg-blue-50 text-blue-900 font-semibold">Ruby bridge</div>
+          <p class="text-sm text-slate-600">RMXP stores maps as Ruby <code>Marshal</code> blobs. Ruby reads/writes them natively. Reimplementing Marshal in TS is high risk for a POC; Ruby is a thin adapter at the disk seam.</p>
+        </div>
+        <div class="fig-card p-5 space-y-2">
+          <div class="fig-sticky border-emerald-300 bg-emerald-50 text-emerald-900 font-semibold">On Essentials, not custom format</div>
+          <p class="text-sm text-slate-600">Product goal: playable games in the existing fan-dev ecosystem. Custom JSON/SQLite would require a full runtime rewrite. Essentials compatibility is the moat and the constraint.</p>
+        </div>
+        <div class="fig-card p-5 space-y-2">
+          <div class="fig-sticky border-orange-300 bg-orange-50 text-orange-900 font-semibold">.rxdata files</div>
+          <p class="text-sm text-slate-600">Industry-standard for this niche (RMXP). Round-trip fidelity with Game.exe smoke tests. Trade-off: opaque binary, Ruby dependency, no git-friendly diffs.</p>
+        </div>
+        <div class="fig-card p-5 space-y-2">
+          <div class="fig-sticky border-pink-300 bg-pink-50 text-pink-900 font-semibold">Replace Ruby later?</div>
+          <p class="text-sm text-slate-600">Only if you leave RMXP entirely. While targeting Essentials, Ruby (or a proven Marshal library) stays. A TS-only path means owning serialization + every RPG::Map edge case.</p>
+        </div>
+        <div class="fig-card p-5 space-y-2">
+          <div class="fig-sticky border-slate-300 bg-slate-50 text-slate-800 font-semibold">Poor fits at this scale</div>
+          <p class="text-sm text-slate-600">Unity/Godot rewrite, microservices from day one, cloud-only SaaS without local disk access, or Tauri+Rust if team lacks systems skills and Ruby bridge already works.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- Layer diagram FigJam style -->
+    <section id="layers" class="section-anchor space-y-6">
+      <h2 class="text-2xl font-bold">Layer architecture</h2>
+      <p class="text-slate-600 text-sm">Hexagonal / ports-and-adapters: domain logic in the center; UI and I/O are adapters.</p>
+      <div class="fig-card p-4 sm:p-6 overflow-x-auto">
+        <svg viewBox="0 0 900 520" class="w-full min-w-[320px] max-w-[900px] mx-auto block" aria-label="Layer architecture diagram">
+          <defs>
+            <marker id="arrow" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto">
+              <polygon points="0 0, 8 4, 0 8" fill="#94a3b8" />
+            </marker>
+          </defs>
+          <!-- Renderer layer -->
+          <rect x="40" y="20" width="820" height="100" rx="12" fill="#ede9fe" stroke="#7c3aed" stroke-width="2" />
+          <text x="60" y="48" font-size="14" font-weight="700" fill="#5b21b6">Renderer — React (src/renderer)</text>
+          <rect x="60" y="58" width="130" height="48" rx="8" fill="#fff" stroke="#a78bfa" stroke-width="1.5" />
+          <text x="72" y="78" font-size="11" fill="#4c1d95">App.tsx</text>
+          <text x="72" y="94" font-size="10" fill="#64748b">orchestrates UI state</text>
+          <rect x="210" y="58" width="120" height="48" rx="8" fill="#fff" stroke="#a78bfa" stroke-width="1.5" />
+          <text x="222" y="78" font-size="11" fill="#4c1d95">components/</text>
+          <text x="222" y="94" font-size="10" fill="#64748b">Chat, Preview, Tree</text>
+          <rect x="350" y="58" width="120" height="48" rx="8" fill="#fff" stroke="#a78bfa" stroke-width="1.5" />
+          <text x="362" y="78" font-size="11" fill="#4c1d95">bridge.ts</text>
+          <text x="362" y="94" font-size="10" fill="#64748b">IPC or HTTP client</text>
+          <rect x="490" y="58" width="140" height="48" rx="8" fill="#fff" stroke="#a78bfa" stroke-width="1.5" />
+          <text x="502" y="78" font-size="11" fill="#4c1d95">shared/ (import)</text>
+          <text x="502" y="94" font-size="10" fill="#64748b">pure types + logic</text>
+
+          <!-- Transport -->
+          <rect x="120" y="150" width="660" height="72" rx="12" fill="#dbeafe" stroke="#2563eb" stroke-width="2" />
+          <text x="140" y="178" font-size="14" font-weight="700" fill="#1e40af">Transport adapters</text>
+          <rect x="160" y="188" width="200" height="24" rx="6" fill="#fff" stroke="#60a5fa" />
+          <text x="170" y="204" font-size="11" fill="#1e3a8a">ipc-handlers.ts (Electron)</text>
+          <rect x="400" y="188" width="200" height="24" rx="6" fill="#fff" stroke="#60a5fa" />
+          <text x="410" y="204" font-size="11" fill="#1e3a8a">api-server.ts (Express)</text>
+
+          <!-- Handlers -->
+          <rect x="80" y="252" width="740" height="120" rx="12" fill="#d1fae5" stroke="#059669" stroke-width="2" />
+          <text x="100" y="280" font-size="14" font-weight="700" fill="#065f46">handlers.ts — business logic (transport-agnostic)</text>
+          <rect x="100" y="292" width="150" height="40" rx="8" fill="#fff" stroke="#34d399" />
+          <text x="112" y="310" font-size="10" fill="#064e3b">chat-map-pipeline</text>
+          <text x="112" y="324" font-size="10" fill="#64748b">AI → map write</text>
+          <rect x="270" y="292" width="130" height="40" rx="8" fill="#fff" stroke="#34d399" />
+          <text x="282" y="310" font-size="10" fill="#064e3b">map-generator</text>
+          <text x="282" y="324" font-size="10" fill="#64748b">bridge caller</text>
+          <rect x="420" y="292" width="130" height="40" rx="8" fill="#fff" stroke="#34d399" />
+          <text x="432" y="310" font-size="10" fill="#064e3b">delete-preflight</text>
+          <text x="432" y="324" font-size="10" fill="#64748b">integrity scan</text>
+          <rect x="570" y="292" width="120" height="40" rx="8" fill="#fff" stroke="#34d399" />
+          <text x="582" y="310" font-size="10" fill="#064e3b">ai-service-*</text>
+          <text x="582" y="324" font-size="10" fill="#64748b">LLM providers</text>
+
+          <!-- Ruby -->
+          <rect x="200" y="400" width="500" height="72" rx="12" fill="#ffedd5" stroke="#ea580c" stroke-width="2" />
+          <text x="220" y="428" font-size="14" font-weight="700" fill="#9a3412">Ruby bridge (src/bridge)</text>
+          <text x="220" y="452" font-size="11" fill="#7c2d12">marshal_handler.rb — spawn from MapGenerator</text>
+
+          <!-- Disk -->
+          <rect x="120" y="490" width="660" height="24" rx="8" fill="#f1f5f9" stroke="#64748b" stroke-width="1.5" />
+          <text x="280" y="507" font-size="11" fill="#334155">Essentials project — Map###.rxdata, MapInfos.rxdata, Scripts.rxdata, Tilesets…</text>
+
+          <!-- Arrows -->
+          <path class="connector" d="M450 120 L450 150" />
+          <path class="connector" d="M450 222 L450 252" />
+          <path class="connector" d="M450 372 L450 400" />
+          <path class="connector" d="M450 472 L450 490" />
+        </svg>
+      </div>
+      <p class="text-sm text-slate-500"><strong>“Local backend”</strong> = Node in Electron main process (or standalone via browser-server.ts). Not a remote server — it runs on the user’s machine with filesystem access.</p>
+    </section>
+
+    <!-- Component walkthrough -->
+    <section id="components" class="section-anchor space-y-6">
+      <h2 class="text-2xl font-bold">Components — learning order</h2>
+      <ol class="space-y-4 list-none">
+        <li class="fig-card p-5 flex gap-4">
+          <span class="flex-shrink-0 w-8 h-8 rounded-full bg-violet-600 text-white flex items-center justify-center font-bold text-sm">1</span>
+          <div>
+            <h3 class="font-semibold text-lg">shared/types.ts + pure modules</h3>
+            <p class="text-sm text-slate-600 mt-1">Domain types (<code>MapData</code>, <code>MapSpec</code>) and logic with no Electron/React imports: tree building, delete integrity, map transforms. Testable everywhere.</p>
+          </div>
+        </li>
+        <li class="fig-card p-5 flex gap-4">
+          <span class="flex-shrink-0 w-8 h-8 rounded-full bg-violet-600 text-white flex items-center justify-center font-bold text-sm">2</span>
+          <div>
+            <h3 class="font-semibold text-lg">MapGenerator + marshal_handler.rb</h3>
+            <p class="text-sm text-slate-600 mt-1">Spawns Ruby with JSON args; reads/writes binary RMXP structures. The disk I/O adapter.</p>
+          </div>
+        </li>
+        <li class="fig-card p-5 flex gap-4">
+          <span class="flex-shrink-0 w-8 h-8 rounded-full bg-violet-600 text-white flex items-center justify-center font-bold text-sm">3</span>
+          <div>
+            <h3 class="font-semibold text-lg">handlers.ts</h3>
+            <p class="text-sm text-slate-600 mt-1">All use cases: chat, read map, delete preflight, tileset inspector. Single entry for IPC and HTTP. <em>Not</em> Electron-specific.</p>
+          </div>
+        </li>
+        <li class="fig-card p-5 flex gap-4">
+          <span class="flex-shrink-0 w-8 h-8 rounded-full bg-violet-600 text-white flex items-center justify-center font-bold text-sm">4</span>
+          <div>
+            <h3 class="font-semibold text-lg">ipc-handlers.ts / api-server.ts</h3>
+            <p class="text-sm text-slate-600 mt-1">Thin adapters mapping channels/routes → handler functions. Browser dev uses Express on :3001; Electron uses ipcMain.</p>
+          </div>
+        </li>
+        <li class="fig-card p-5 flex gap-4">
+          <span class="flex-shrink-0 w-8 h-8 rounded-full bg-violet-600 text-white flex items-center justify-center font-bold text-sm">5</span>
+          <div>
+            <h3 class="font-semibold text-lg">bridge.ts (renderer)</h3>
+            <p class="text-sm text-slate-600 mt-1">Unified client: <code>window.electron.invoke</code> in desktop, <code>fetch</code> to Express in browser mode. UI never imports Electron directly.</p>
+          </div>
+        </li>
+        <li class="fig-card p-5 flex gap-4">
+          <span class="flex-shrink-0 w-8 h-8 rounded-full bg-violet-600 text-white flex items-center justify-center font-bold text-sm">6</span>
+          <div>
+            <h3 class="font-semibold text-lg">App.tsx — your app shell, not framework infra</h3>
+            <p class="text-sm text-slate-600 mt-1">Root React component: holds project path, chat messages, preview state, map tree. Same role as your RN root navigator + screen state — project-specific, not provided by Electron/React.</p>
+          </div>
+        </li>
+        <li class="fig-card p-5 flex gap-4">
+          <span class="flex-shrink-0 w-8 h-8 rounded-full bg-violet-600 text-white flex items-center justify-center font-bold text-sm">7</span>
+          <div>
+            <h3 class="font-semibold text-lg">Workbench components</h3>
+            <p class="text-sm text-slate-600 mt-1">MapPreview (canvas), MapsTree (dnd-kit), ChatInterface, modals. Presentation only; call bridge for data.</p>
+          </div>
+        </li>
+      </ol>
+    </section>
+
+    <!-- ERD -->
+    <section id="entities" class="section-anchor space-y-6">
+      <h2 class="text-2xl font-bold">Domain entities (Essentials project)</h2>
+      <p class="text-sm text-slate-600">Logical relationships on disk — not a SQL schema.</p>
+      <div class="erd-grid grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
+        <div class="erd-table">
+          <div class="erd-header">MapInfos.rxdata</div>
+          <div class="erd-row"><span class="erd-pk">id</span> number</div>
+          <div class="erd-row">name string</div>
+          <div class="erd-row">parentId → MapInfos</div>
+          <div class="erd-row">order number</div>
+        </div>
+        <div class="erd-table">
+          <div class="erd-header">Map###.rxdata</div>
+          <div class="erd-row"><span class="erd-pk">id</span> number</div>
+          <div class="erd-row"><span class="erd-fk">tilesetId</span> → Tilesets</div>
+          <div class="erd-row">width, height</div>
+          <div class="erd-row">layers[][][] tiles</div>
+          <div class="erd-row">events[]</div>
+        </div>
+        <div class="erd-table">
+          <div class="erd-header">System.rxdata</div>
+          <div class="erd-row"><span class="erd-fk">start_map_id</span> → Map</div>
+          <div class="erd-row">start_x, start_y</div>
+          <div class="erd-row">… game config</div>
+        </div>
+        <div class="erd-table">
+          <div class="erd-header">Tilesets.rxdata</div>
+          <div class="erd-row"><span class="erd-pk">id</span> number</div>
+          <div class="erd-row">tilesetName</div>
+          <div class="erd-row">passages, priorities</div>
+        </div>
+        <div class="erd-table">
+          <div class="erd-header">.pgb/ (planned)</div>
+          <div class="erd-row">game-bible.json</div>
+          <div class="erd-row">town-plan.json</div>
+          <div class="erd-row">cache/vocabulary</div>
+        </div>
+        <div class="erd-table">
+          <div class="erd-header">App types (TS)</div>
+          <div class="erd-row">MapSpec → input</div>
+          <div class="erd-row">MapData → normalized</div>
+          <div class="erd-row">MapPatch (planned)</div>
+        </div>
+      </div>
+      <div class="fig-card p-4 text-sm text-slate-600">
+        <strong>Relationships:</strong> MapInfos indexes maps; System.start_map_id must reference an existing Map; delete preflight scans all maps + Scripts for references.
+      </div>
+    </section>
+
+    <!-- File structure -->
+    <section id="filesystem" class="section-anchor space-y-6">
+      <h2 class="text-2xl font-bold">File structure critique</h2>
+      <div class="grid md:grid-cols-2 gap-4">
+        <div class="fig-card p-5 space-y-3">
+          <h3 class="font-semibold text-emerald-700">Works well</h3>
+          <ul class="text-sm text-slate-600 space-y-2 list-disc pl-5">
+            <li><code>main/</code> vs <code>renderer/</code> vs <code>shared/</code> — standard Electron split</li>
+            <li><code>shared/</code> — pure TS usable from main and renderer tests</li>
+            <li>Handlers separated from transport — interview-ready hexagonal story</li>
+            <li><code>docs/plans/</code> + <code>VISION.md</code> — product north star</li>
+          </ul>
+        </div>
+        <div class="fig-card p-5 space-y-3">
+          <h3 class="font-semibold text-orange-700">Improve over time</h3>
+          <ul class="text-sm text-slate-600 space-y-2 list-disc pl-5">
+            <li><code>handlers.ts</code> is large (~1000+ lines) — split by domain when executor lands</li>
+            <li>No <code>docs/adr/</code> yet — record stack + patch-first decisions</li>
+            <li><code>docs/prompts/</code> planned but missing — agent layer not in repo</li>
+            <li>README was stale vs actual stack — now fixed separately</li>
+          </ul>
+        </div>
+      </div>
+      <div class="fig-card p-5">
+        <h3 class="font-semibold mb-2">Why <code>shared/</code>?</h3>
+        <p class="text-sm text-slate-600">Electron forbids importing main-process code in renderer. Shared holds types and pure functions both sides need: map tree logic, delete rules, read→preview transforms. No fs, no window, no AI keys.</p>
+      </div>
+    </section>
+
+    <!-- Remote backend -->
+    <section id="remote" class="section-anchor space-y-6">
+      <h2 class="text-2xl font-bold">Local vs remote backend</h2>
+      <div class="grid md:grid-cols-2 gap-4">
+        <div class="fig-card p-5 border-l-4 border-emerald-500">
+          <h3 class="font-semibold">Stay local (now)</h3>
+          <ul class="text-sm text-slate-600 mt-2 space-y-1 list-disc pl-5">
+            <li>User’s Essentials folder stays on their machine</li>
+            <li>No hosting cost, no map asset upload privacy issues</li>
+            <li>Ruby spawn + large file I/O fit local process</li>
+            <li>MVP: AI keys can stay local (user-provided)</li>
+          </ul>
+        </div>
+        <div class="fig-card p-5 border-l-4 border-blue-500">
+          <h3 class="font-semibold">Add remote services (later)</h3>
+          <ul class="text-sm text-slate-600 mt-2 space-y-1 list-disc pl-5">
+            <li>Hosted AI proxy (hide keys, rate limits, billing)</li>
+            <li>Team collaboration / shared Game Bible</li>
+            <li>Heavy vision jobs (tileset labeling at scale)</li>
+            <li>Analytics, template marketplace</li>
+          </ul>
+        </div>
+      </div>
+      <p class="text-sm text-slate-600 fig-card p-4"><strong>Design impact:</strong> Keep <code>handlers.ts</code> as domain core. Remote becomes another adapter (HTTP client to your Scala/Protobuf service) — same pattern as IPC today. Renderer unchanged if bridge targets configurable base URL. Do not merge domain logic into a cloud monolith early.</p>
+    </section>
+
+    <!-- CQRS -->
+    <section id="cqrs" class="section-anchor space-y-4">
+      <h2 class="text-2xl font-bold">CQRS (and how this project uses it)</h2>
+      <div class="fig-card p-5 space-y-3">
+        <p class="text-sm text-slate-700"><strong>CQRS</strong> = Command Query Responsibility Segregation. Separate the <em>read model</em> (queries, previews, summaries) from the <em>write model</em> (commands, patches, file writes).</p>
+        <p class="text-sm text-slate-600">Here: <code>read-map</code> / preview canvas = query side. Chat → MapPatch → executor → Ruby write = command side. Planned specialists produce patches (commands); validator + executor apply them. You don’t need event sourcing or separate databases to benefit from the split — just clear read vs write paths and patch-first edits.</p>
+      </div>
+    </section>
+
+    <footer class="text-sm text-slate-500 pt-8 border-t border-slate-200">
+      <p>Companion: <code>docs/design-process.md</code> · Domain glossary: <code>CONTEXT.md</code> · Open this file locally in a browser.</p>
+    </footer>
+  </div>
+</body>
+</html>
