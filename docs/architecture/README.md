@@ -1,6 +1,6 @@
 # Architecture docs
 
-Visual and textual reference for interviews and design sessions.
+Visual and textual reference for design validation sessions and onboarding.
 
 | Asset | Purpose |
 |-------|---------|
