@@ -1,75 +1,85 @@
 # Pokemon Game Builder
 
-An AI-powered companion for RPG Maker XP and Pokemon Essentials.
+AI-powered desktop companion for **Pokémon Essentials** developers to generate and preview playable Pokémon games. Describe maps in chat, preview layers and events in-app, and write real RPG Maker XP `.rxdata` files to disk — no daily RMXP editing required. Built with Electron, React, TypeScript, and a Ruby Marshal bridge; architecture separates UI adapters from testable domain handlers with patch-first iteration on the roadmap.
 
-## Features (POC)
+## Features
 
-- **AI Chat Interface**: Talk to an AI agent to build your Pokemon world.
-- **Map Generation**: Automatically create `.rxdata` map files compatible with RPG Maker XP.
-- **Pokemon Essentials Integration**: Directly modifies your project files.
+- **AI chat** — Gemini or Claude; map generation from natural language
+- **In-app workbench** — map tree, canvas preview (layers, events, grid), draggable layout
+- **Safe map ops** — MapInfos reorder/reparent, delete with integrity preflight verification
+- **Real project files** — reads/writes `Map###.rxdata`, `MapInfos.rxdata`, tilesets via Ruby bridge
 
 ## Prerequisites
 
-- **Node.js**: v18 or later
-- **Ruby**: v2.7 or later (required for `.rxdata` file manipulation)
-- **Gemini API Key**: You'll need an API key from [Google AI Studio](https://aistudio.google.com/).
+- Node.js 18+
+- Ruby 2.7+ (for `.rxdata` read/write)
+- API key: [Google AI Studio](https://aistudio.google.com/) (Gemini) and/or Anthropic (Claude)
 
 ## Setup
 
-1. **Install Dependencies**:
-   ```bash
-   npm install
-   ```
+```bash
+npm install
+```
 
-2. **Configure API Key**:
-   Set the `GEMINI_API_KEY` environment variable:
-   ```bash
-   # Windows (PowerShell)
-   $env:GEMINI_API_KEY="your-api-key-here"
-   
-   # macOS/Linux
-   export GEMINI_API_KEY="your-api-key-here"
-   ```
+Set an API key (example — Gemini):
 
-3. **Run the App**:
-   ```bash
-   npm run electron:dev
-   ```
+```powershell
+# Windows PowerShell
+$env:GEMINI_API_KEY="your-key"
+```
 
-## How to Use
+Run desktop app:
 
-1. **Select Project**: Click "Select Essentials Project" and choose your Pokemon Essentials folder (the one containing `Game.exe`).
-2. **Chat**: Type a request like "Create a small starter town map with a few houses and trees."
-3. **Verify**: Once the AI confirms generation, open your project in **RPG Maker XP**. 
-   *Note: In the POC, you may need to manually add the map to the map tree or refresh the project.*
+```bash
+npm run dev:desktop
+```
 
-## Project Structure
+Browser mode (Express API + Vite UI):
 
-- `src/main`: Electron main process and backend services.
-- `src/renderer`: React frontend and UI components.
-- `src/bridge`: Ruby scripts for interacting with RPG Maker XP's Marshal format.
-- `src/shared`: Shared types and utilities.
+```bash
+npm run dev:browser
+```
 
-## Technical Details
+## Tests
 
-- **Stack**: Electron, React, TypeScript, Vite, Tailwind CSS.
-- **AI**: Google Gemini Pro.
-- **Bridge**: Ruby bridge using the `Marshal` library to read/write RPG Maker XP data structures.
+```bash
+npm test
+```
+
+## Architecture
+
+| Layer | Path | Role |
+|-------|------|------|
+| UI | `src/renderer/` | React workbench, chat, preview |
+| Client | `src/renderer/services/bridge.ts` | IPC (Electron) or HTTP (browser) |
+| Domain | `src/main/handlers.ts` | Business logic — transport-agnostic |
+| Adapters | `ipc-handlers.ts`, `api-server.ts` | Electron / Express entry points |
+| Disk I/O | `src/main/map-generator.ts` + `src/bridge/` | Ruby Marshal adapter |
+| Shared | `src/shared/` | Types + pure logic (both processes) |
+
+**Visual overview:** open [`docs/architecture/overview.html`](docs/architecture/overview.html) in a browser.
+
+**Design sessions:** [`docs/design-process.md`](docs/design-process.md) · **Domain terms:** [`CONTEXT.md`](CONTEXT.md) · **Product vision:** [`docs/VISION.md`](docs/VISION.md)
+
+## Project structure
+
+```
+src/
+  main/       Electron main + domain handlers
+  renderer/   React UI
+  shared/     Types and pure TS (map tree, delete integrity, transforms)
+  bridge/     marshal_handler.rb
+docs/
+  architecture/   HTML + architecture index
+  plans/          MVP and GUI roadmaps
+  VISION.md       North star
+```
 
 ## Roadmap
 
-- [ ] Automatic map tree registration (MapInfos.rxdata).
-- [ ] Advanced event generation (NPCs, Items, Warp points).
-- [ ] Asset generation (AI-generated tilesets and sprites).
-- [ ] Script generation for Pokemon Essentials.
+See [`docs/VISION.md`](docs/VISION.md) and [`docs/plans/mvp_implementation_plan_a41c92e4.plan.md`](docs/plans/mvp_implementation_plan_a41c92e4.plan.md). Next major track: tileset vision, vocabulary cache, specialist agents, neighbor-aware autotile executor, Game Bible.
 
-## Useful Resources
+## Resources
 
-- **Video Tutorials**:
-  - [Thundaga: How To Make A Pokémon Game - Part 1: Getting Started](https://youtu.be/LveDeFobPhQ)
-  - [ShepskyDad: Type Triangles in Pokémon](https://youtu.be/T_HZYzs-tUA)
-  - [ShepskyDad: Building the Perfect Fire Type Gym Leader](https://youtu.be/3Bsc9lZiUyM)
-- **Community Platforms**:
-  - [Pokemon Essentials Wiki](https://pokemonessentials.fandom.com/wiki/Pok%C3%A9mon_Essentials_Wiki)
-  - [Relic Castle](https://reliccastle.com/)
-  - [PokeCommunity (Pokemon Essentials)](https://www.pokecommunity.com/forumdisplay.php?f=191)
+- [Pokémon Essentials Wiki](https://pokemonessentials.fandom.com/wiki/Pok%C3%A9mon_Essentials_Wiki)
+- [Relic Castle](https://reliccastle.com/)
