@@ -12,6 +12,12 @@ Paste a session block into a new chat with links to [`CONTEXT.md`](../CONTEXT.md
 
 ---
 
+## Start here — what is this process?
+
+**End goal (all sessions):** You can explain the app’s design in an interview, the docs match the code, and you have a **prioritized refactor backlog** to implement when you switch back to coding.
+
+**You do not implement architecture changes during design sessions.** Sessions produce decisions and doc updates. Implementation is separate PRs from the refactor backlog.
+
 ## What we are validating (quality bar)
 
 Every session applies this lens — not only “does code match VISION?”
@@ -44,14 +50,44 @@ Every session applies this lens — not only “does code match VISION?”
 
 ## Session 0 — Baseline (once)
 
-**Goal:** Map POC reality → target architecture → doc drift.
+**Goal:** One honest snapshot — no debates yet.
+
+**You should leave knowing:**
+
+1. What the app **is today** (layers + main user flows).
+2. What the docs **say we’re building toward** (VISION / AGENTS).
+3. Where those **don’t match** (short mismatch list).
 
 **Validate:**
+
 - [`docs/architecture/overview.html`](./architecture/overview.html) vs `src/` — layer diagram still accurate?
 - VISION § Current state + MVP gaps vs repo and plan todo statuses.
 - First pass on quality bar: what clearly looks “vibe POC” vs intentional?
 
-**Deliverables:** Mismatch list in Open decisions log. No code required.
+**Deliverables:** Baseline snapshot below + mismatch rows in Open decisions log.
+
+### Session 0 baseline snapshot *(validated 2025-06-22)*
+
+**What the app is today**
+
+```
+User → React workbench (tree, preview, chat)
+         → bridge.ts (IPC or HTTP)
+           → handlers.ts (use cases)
+             → MapGenerator → marshal_handler.rb → Map###.rxdata on disk
+             → ai-service-* → chat-map-pipeline → MapGenerator (on map create)
+```
+
+- **Read path:** select map in tree → `read-map` → canvas preview. Solid.
+- **Write path (today):** chat → LLM returns full `mapData` → pipeline writes file. **Not** yet propose-patch → executor.
+- **structure:** `main/` / `renderer/` / `shared/` / `bridge/`; thin IPC/HTTP adapters; pure logic in `shared/`.
+- **Still POC-shaped:** inline LLM prompts; ~966-line `handlers.ts`; no `docs/prompts/`, no `docs/adr/`, no executor module.
+
+**Docs that match reality:** `overview.html` layers, VISION § Current state, MVP plan completed todos (Vitest, GW+, delete preflight, event-preserving patch).
+
+**Docs that ahead of code:** specialist agents, `MapPatch`, executor, Game Bible / `.pgb/`, `docs/prompts/`.
+
+**Status:** Session 0 complete. Debates start in Session 1+.
 
 ---
 
@@ -155,6 +191,7 @@ Concrete work from validation — each row should cite which quality pillar it f
 | R3 | Executor module skeleton + validator seam | Fit / modular | 3 | 1 PR | Open |
 | R4 | `docs/prompts/` with orchestrator PR | Align | 3 | with agent PR | Open |
 | R5 | ADR batch (0001–0003) | Align | 1–5 | docs | Open |
+| R6 | Reconcile MVP plan todos with AGENTS build order (Game Bible, prompts, executor) | Align | 6 | docs | Open |
 
 Add rows as sessions find gaps. Close with PR or ADR reference.
 
@@ -162,11 +199,23 @@ Add rows as sessions find gaps. Close with PR or ADR reference.
 
 ## Open decisions log
 
-| # | Question | Status |
-|---|----------|--------|
-| 1 | Split `handlers.ts` before or with executor PR? | Open |
-| 2 | Keep both IPC and Express long-term? | Open |
-| 3 | Council-style review for orchestrator layout? | Open — default no |
+**Session 0 — doc/code mismatches** *(record only; decide in later sessions)*
+
+| # | Mismatch | Decide in |
+|---|----------|-----------|
+| D1 | Write path is AI → full map → disk; target is propose → executor → disk | Session 3 |
+| D2 | `docs/prompts/` and `docs/adr/` missing | Session 3–4 |
+| D3 | MVP plan has no explicit PRs for Game Bible, `.pgb/`, executor skeleton (AGENTS.md does) | Session 6 |
+| D4 | “Orchestrator” in MVP plan (multi-map) vs AGENTS (route specialists) — same word? | Session 3 |
+
+**Architecture debates** *(not for Session 0)*
+
+| # | Question | Status | Session |
+|---|----------|--------|---------|
+| 1 | Split `handlers.ts` before or with executor PR? | Open | 2 |
+| 2 | Keep both IPC and Express long-term? | Open | 2 |
+| 3 | Executor: evolve `chat-map-pipeline` in place vs new `executor/` module? | Open | 3 |
+| 4 | Council-style review for orchestrator layout? | Open — default no | 3 |
 
 ---
 
