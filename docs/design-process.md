@@ -107,6 +107,34 @@ User → React workbench (tree, preview, chat)
 
 **Deliverables:** `CONTEXT.md` — *Essentials project*, *Ruby bridge*, *RXData*. ADR: local-first Essentials compatibility. Refactor backlog for seam issues.
 
+### Session 1 validation snapshot *(in progress 2025-06-25)*
+
+**Disk flow (validated)**
+
+```
+handlers.ts → MapGenerator → spawn(ruby, marshal_handler.rb, <command>, <paths>)
+              JSON stdin/stdout  ↔  Marshal.load/dump  ↔  Essentials project Data/
+```
+
+| Quality pillar | Finding |
+|----------------|---------|
+| **Fit** | Local Electron + Ruby RXData is correct for Essentials. Overview.html stack section matches code. |
+| **Standard** | Command-based CLI adapter (`create_map`, `read_map`, `patch_map_tiles`, `delete_maps`, …) is a recognizable outbound port. |
+| **Readable** | One diagram explains read and write paths. `overview.html` layer diagram accurate. |
+| **Modular** | **Gap:** ~250 lines of TS Marshal `Table` binary patching (`patchMapDataBinary`) duplicate Ruby knowledge; production always uses Ruby path (`useRubyPatch` default `true`). |
+
+**Browser vs Electron boot:** Both call `boot()` + `startApiServer()`. Electron adds `ipcMain` delegates and native directory picker; config path differs (`userData` vs `~/.pokemon-game-builder/`). Ruby bridge resolution handles packaged vs dev paths.
+
+**Ruby missing:** Friendly install message on `create_map` ENOENT; most other spawn sites use generic "Ruby is not installed or not in PATH."
+
+**Decisions recorded:** [ADR 0001](./adr/0001-local-first-ruby-bridge.md) — keep local-first + Ruby bridge.
+
+**Decided:** Remove TS `patchMapDataBinary` fallback — Ruby-only RXData writes (R7). Unify Ruby-missing error messages via shared helper (R8). **Dual host:** Electron desktop = primary dogfood path; `browser-server` = optional lightweight dev host (keep, not delete). Playwright / AI vision: automate `http://localhost:5173` — works with **either** host because both run Express on :3001 and the renderer falls back to HTTP when `window.electron` is absent (Playwright’s browser is not the Electron shell). Domain code (`handlers.ts`, `MapGenerator`) stays host-agnostic.
+
+**Naming (Session 1 → 2 handoff):** Drop generic “bridge”. Filesystem/data = **project data layer** (`project-data-client` + `project-data/implementations/*`). Main = **driving** + **driven** adapters (IPC/HTTP split). Renderer = **presentation** + **Host API**. Implementation names (marshal-ruby, rxdata) live only under `implementations/`. See R9–R11.
+
+**Status:** Session 1 complete. Next: Session 2 — transport & domain core (R1, R2, R9, R11).
+
 ---
 
 ## Session 2 — Transport & domain core
@@ -190,8 +218,13 @@ Concrete work from validation — each row should cite which quality pillar it f
 | R2 | Typed bridge contract (replace string channels) | Standard / readable | 2 | 1 PR | Open |
 | R3 | Executor module skeleton + validator seam | Fit / modular | 3 | 1 PR | Open |
 | R4 | `docs/prompts/` with orchestrator PR | Align | 3 | with agent PR | Open |
-| R5 | ADR batch (0001–0003) | Align | 1–5 | docs | Open |
+| R5 | ADR batch (0001–0003) | Align | 1–5 | docs | In progress — [0001](./adr/0001-local-first-ruby-bridge.md) done |
 | R6 | Reconcile MVP plan todos with AGENTS build order (Game Bible, prompts, executor) | Align | 6 | docs | Open |
+| R7 | Remove TS `patchMapDataBinary` fallback; Ruby-only RXData writes | Standard / fit | 1 | 1 PR | Open — decided Session 1 |
+| R8 | Unify Ruby-missing error messages across all `MapGenerator` spawn sites | Readable | 1 | 1 PR | Open — decided Session 1 |
+| R9 | Restructure: `main/host/`, `adapters/driving|driven/`, `project-data/implementations/`, split Host API | Readable / modular | 2 | 1–2 PRs | Open |
+| R10 | Typed application port; share contract between Host API transports and driving adapters (extends R2) | Standard / readable | 2 | with R2 | Open |
+| R11 | Rename `bridge.ts` → `host-api/`; `MapGenerator` → `project-data-client.ts` | Readable | 2 | with R9 | Open |
 
 Add rows as sessions find gaps. Close with PR or ADR reference.
 
@@ -213,7 +246,7 @@ Add rows as sessions find gaps. Close with PR or ADR reference.
 | # | Question | Status | Session |
 |---|----------|--------|---------|
 | 1 | Split `handlers.ts` before or with executor PR? | Open | 2 |
-| 2 | Keep both IPC and Express long-term? | Open | 2 |
+| 2 | Keep both IPC and Express long-term? | Open — IPC for Electron shell; HTTP for Playwright/external browser and browser-only host; both delegate to same handlers | 2 |
 | 3 | Executor: evolve `chat-map-pipeline` in place vs new `executor/` module? | Open | 3 |
 | 4 | Council-style review for orchestrator layout? | Open — default no | 3 |
 
