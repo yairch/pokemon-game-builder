@@ -8,13 +8,41 @@ Domain language for the Essentials companion app. Implementation lives in code a
 The user’s RPG Maker XP game folder containing `Game.exe`, `Data/`, and Pokémon Essentials scripts.
 _Avoid_: game repo, RMXP project (when meaning the on-disk folder the app opens)
 
-**RXData**:
-Ruby Marshal binary files (`Map###.rxdata`, `MapInfos.rxdata`, etc.) that RMXP reads and writes.
-_Avoid_: map file (too vague), json map
+**Project data layer**:
+Read/write the **opened game project** on disk — maps, map tree, tilesets, and related project files. The app’s filesystem I/O boundary toward the live project folder; implementation-agnostic (no Ruby, Marshal, or `.rxdata` in the name).
+_Avoid_: bridge, persistence, RXData adapter, Essentials (in layer/code names)
 
-**Ruby bridge**:
-The `marshal_handler.rb` adapter that converts between JSON (TypeScript) and RXData on disk.
-_Avoid_: Ruby service, backend
+**Project data client**:
+Driven adapter in the main process that the application core calls for project data I/O. Orchestrates spawn/read/write; speaks JSON to the core, delegates format work to a **project data implementation**.
+_Avoid_: MapGenerator (legacy name), bridge, backend
+
+**Project data implementation**:
+Concrete on-disk format handler under `project-data/implementations/` (e.g. `marshal-ruby/` today). Swappable without renaming the layer.
+_Avoid_: Ruby bridge, essentials-fs, rxdata folder
+
+**RXData**:
+An on-disk file format used by RPG Maker XP projects (`Map###.rxdata`, …). An implementation detail of the current marshal-ruby implementation — not the layer name.
+_Avoid_: map file (too vague), data layer
+
+**Application core**:
+Transport-agnostic use cases in `handlers.ts` plus pure logic in `shared/`. Does not import Electron, Express, or spawn Ruby directly from UI code paths.
+_Avoid_: backend, main process (when meaning domain logic)
+
+**Driving adapters**:
+Main-process entry points that receive UI requests and call the application core — Electron IPC and local HTTP (Express). Two transports, one use-case surface.
+_Avoid_: transport layer, bridge, api routes (alone)
+
+**Driven adapters**:
+Implementations the application core calls for external I/O — **project data client** (+ implementations under `project-data/`), LLM providers (`ai-service-*`).
+_Avoid_: bridge, outbound services
+
+**Host API client**:
+Renderer-side proxy that invokes the same use cases as the driving adapters — via IPC in the Electron shell, via HTTP when no preload (browser tab, Playwright). Sits in the presentation layer, outside the hexagon boundary.
+_Avoid_: bridge, bridge.ts, frontend API
+
+**Presentation layer**:
+React workbench UI (`components/`, `App.tsx`) and the Host API client. Displays state and forwards intent; no direct disk or LLM access.
+_Avoid_: renderer (when meaning “the whole frontend stack”), view layer
 
 **MapSpec**:
 Structured input describing a map to create or compile (dimensions, tileset, regions, events intent).

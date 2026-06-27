@@ -16,8 +16,43 @@
       --fig-bg: #f8fafc;
       --fig-card: #ffffff;
       --fig-border: #e2e8f0;
+      /* Layer palette — shared by arch stack + Mermaid */
+      --layer-purple-bg: #ede9fe;
+      --layer-purple-border: #7c3aed;
+      --layer-purple-title: #5b21b6;
+      --layer-purple-box-border: #a78bfa;
+      --layer-purple-text: #4c1d95;
+      --layer-blue-bg: #dbeafe;
+      --layer-blue-border: #2563eb;
+      --layer-blue-title: #1e40af;
+      --layer-blue-box-border: #60a5fa;
+      --layer-blue-text: #1e3a8a;
+      --layer-green-bg: #d1fae5;
+      --layer-green-border: #059669;
+      --layer-green-title: #065f46;
+      --layer-green-box-border: #34d399;
+      --layer-green-text: #064e3b;
+      --layer-orange-bg: #ffedd5;
+      --layer-orange-border: #ea580c;
+      --layer-orange-title: #9a3412;
+      --layer-orange-box-border: #fb923c;
+      --layer-orange-text: #7c2d12;
+      --layer-orange-impl-bg: #fff7ed;
+      --layer-disk-bg: #f1f5f9;
+      --layer-disk-border: #64748b;
+      --layer-disk-title: #334155;
+      --layer-disk-text: #475569;
+      --diagram-max-width: 72rem;
     }
-    body { background: var(--fig-bg); }
+    body { background: var(--fig-bg); min-height: 100vh; }
+    .page-shell {
+      width: 100%;
+      max-width: none;
+      box-sizing: border-box;
+      padding-inline: clamp(1rem, 3vw, 3.5rem);
+      padding-block: clamp(2rem, 4vw, 3.5rem);
+    }
+    .prose-width { max-width: 48rem; }
     .fig-card {
       background: var(--fig-card);
       border: 2px solid var(--fig-border);
@@ -34,6 +69,8 @@
       word-wrap: break-word;
     }
     .connector { stroke: #94a3b8; stroke-width: 2; fill: none; marker-end: url(#arrow); }
+    .connector-dashed { stroke: #94a3b8; stroke-width: 2; fill: none; stroke-dasharray: 6 4; marker-end: url(#arrow); }
+    .hex-border { fill: none; stroke: #64748b; stroke-width: 2; stroke-dasharray: 10 6; }
     .erd-table {
       border: 2px solid #334155;
       border-radius: 8px;
@@ -57,32 +94,325 @@
     .erd-pk { color: #b45309; font-weight: 600; }
     .erd-fk { color: #2563eb; }
     .section-anchor { scroll-margin-top: 1.5rem; }
+    .tree { font-family: ui-monospace, monospace; font-size: 0.8125rem; line-height: 1.6; }
+    /* Architecture stack (HTML layer diagram) */
+    .arch-stack { display: flex; flex-direction: column; gap: 0; width: 100%; }
+    .arch-layer { border-radius: 12px; padding: 1rem 1.25rem; border: 2px solid; }
+    .arch-layer-title { font-size: 0.75rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 0.75rem; }
+    .arch-boxes { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+    .arch-box { background: #fff; border: 1.5px solid; border-radius: 8px; padding: 0.5rem 0.75rem; font-size: 0.75rem; line-height: 1.35; min-width: 0; flex: 1 1 9rem; }
+    .arch-box code { font-size: 0.7rem; word-break: break-all; }
+    .arch-box-sub { display: block; color: #64748b; font-size: 0.65rem; margin-top: 0.2rem; }
+    .arch-arrow { text-align: center; padding: 0.35rem 0; font-size: 0.75rem; color: #64748b; font-weight: 600; line-height: 1.4; }
+    .arch-arrow::before { content: "↓ "; color: #94a3b8; }
+    .arch-hex-wrap { border: 2px dashed #64748b; border-radius: 16px; padding: 1rem; display: flex; flex-direction: column; gap: 0; background: #fafafa; }
+    .arch-hex-label { font-size: 0.7rem; font-weight: 600; color: #64748b; margin-bottom: 0.5rem; }
+    .layer-presentation { background: var(--layer-purple-bg); border-color: var(--layer-purple-border); }
+    .layer-presentation .arch-layer-title { color: var(--layer-purple-title); }
+    .layer-presentation .arch-box { border-color: var(--layer-purple-box-border); color: var(--layer-purple-text); }
+    .layer-driving { background: var(--layer-blue-bg); border-color: var(--layer-blue-border); }
+    .layer-driving .arch-layer-title { color: var(--layer-blue-title); }
+    .layer-driving .arch-box { border-color: var(--layer-blue-box-border); color: var(--layer-blue-text); }
+    .layer-core { background: var(--layer-green-bg); border-color: var(--layer-green-border); }
+    .layer-core .arch-layer-title { color: var(--layer-green-title); }
+    .layer-core .arch-box { border-color: var(--layer-green-box-border); color: var(--layer-green-text); }
+    .layer-driven { background: var(--layer-orange-bg); border-color: var(--layer-orange-border); }
+    .layer-driven .arch-layer-title { color: var(--layer-orange-title); }
+    .layer-driven .arch-box { border-color: var(--layer-orange-box-border); color: var(--layer-orange-text); }
+    .layer-fs-impl { background: var(--layer-orange-impl-bg); border-color: var(--layer-orange-border); border-style: dashed; }
+    .layer-fs-impl .arch-layer-title { color: var(--layer-orange-title); }
+    .layer-disk { background: var(--layer-disk-bg); border-color: var(--layer-disk-border); text-align: center; }
+    .layer-disk .arch-layer-title { color: var(--layer-disk-title); }
+    .layer-disk p { font-size: 0.8rem; color: var(--layer-disk-text); margin: 0; }
+    #interaction .mermaid-wrap {
+      overflow-x: auto;
+      padding: 0.5rem 0.75rem;
+      -webkit-overflow-scrolling: touch;
+      width: 100%;
+      max-width: var(--diagram-max-width);
+      margin-inline: auto;
+    }
+    .mermaid-wrap pre.mermaid { margin: 0; background: transparent; width: 100%; }
+    .mermaid-wrap svg {
+      display: block;
+      width: 100% !important;
+      max-width: 100% !important;
+      height: auto !important;
+    }
+    /* Mermaid typography — ~125% of prior baseline to match comfortable Chrome zoom */
+    #interaction .mermaid-wrap svg .actor-box,
+    #interaction .mermaid-wrap svg .actor-box tspan {
+      font-family: ui-sans-serif, system-ui, -apple-system, sans-serif !important;
+      font-size: 1rem !important;
+      font-weight: 600 !important;
+    }
+    #interaction .mermaid-wrap svg .messageText,
+    #interaction .mermaid-wrap svg .messageText tspan {
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace !important;
+      font-size: 0.9375rem !important;
+    }
+    #interaction .mermaid-wrap svg .loopText,
+    #interaction .mermaid-wrap svg .labelText,
+    #interaction .mermaid-wrap svg .noteText {
+      font-size: 0.8125rem !important;
+    }
+    #interaction .mermaid-wrap svg .sequenceNumber {
+      font-size: 0.75rem !important;
+    }
+    #interaction .fig-card { overflow-x: auto; }
+    #interaction .mermaid-wrap svg .messageLine0 { stroke: #94a3b8 !important; }
+    #interaction .mermaid-wrap svg .messageLine1 { stroke: var(--layer-green-border) !important; }
+    #interaction .mermaid-wrap svg .loopLine { stroke: var(--layer-purple-border) !important; stroke-width: 1.5px !important; }
     @media (max-width: 768px) {
       .layer-grid { grid-template-columns: 1fr !important; }
       .erd-grid { grid-template-columns: 1fr !important; }
+      .page-shell { padding-inline: 1rem; }
+    }
+    @media (min-width: 1280px) {
+      .arch-box { flex: 1 1 11rem; }
+    }
+    @media (min-width: 1536px) {
+      .arch-box { flex: 1 1 13rem; }
     }
   </style>
 </head>
 <body class="text-slate-800 antialiased">
-  <div class="max-w-6xl mx-auto px-4 sm:px-6 py-8 sm:py-12 space-y-12">
+  <div class="page-shell space-y-12">
 
-    <!-- Header -->
     <header class="space-y-3">
       <p class="text-sm font-medium text-violet-700 uppercase tracking-wide">Architecture reference</p>
       <h1 class="text-3xl sm:text-4xl font-bold text-slate-900">Pokemon Game Builder</h1>
-      <p class="text-lg text-slate-600 max-w-3xl">
-        AI-first companion for RPG Maker XP + Pokémon Essentials. Local app writes real <code class="bg-slate-100 px-1 rounded">.rxdata</code> files; React UI previews and iterates without opening RMXP daily.
+      <p class="text-lg text-slate-600 prose-width">
+        AI-first companion for RPG Maker XP + Pokémon Essentials. Local app reads and writes the user’s
+        <strong>Essentials project</strong> on disk; React workbench previews and iterates without opening RMXP daily.
+      </p>
+      <p class="text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-4 py-2 prose-width">
+        <strong>Target architecture</strong> (Sessions 1–2). Folder names below reflect validated decisions; code moves land in R9–R11. Today’s filenames shown in <em>italics</em> where they differ.
       </p>
       <nav class="flex flex-wrap gap-2 text-sm pt-2">
-        <a href="#stack" class="px-3 py-1 rounded-full bg-white border border-slate-200 hover:border-violet-300">Stack</a>
+        <a href="#hexagon" class="px-3 py-1 rounded-full bg-white border border-slate-200 hover:border-violet-300">Hexagon</a>
         <a href="#layers" class="px-3 py-1 rounded-full bg-white border border-slate-200 hover:border-violet-300">Layers</a>
+        <a href="#interaction" class="px-3 py-1 rounded-full bg-white border border-slate-200 hover:border-violet-300">Interaction</a>
+        <a href="#stack" class="px-3 py-1 rounded-full bg-white border border-slate-200 hover:border-violet-300">Stack</a>
+        <a href="#filesystem" class="px-3 py-1 rounded-full bg-white border border-slate-200 hover:border-violet-300">File structure</a>
         <a href="#components" class="px-3 py-1 rounded-full bg-white border border-slate-200 hover:border-violet-300">Components</a>
         <a href="#entities" class="px-3 py-1 rounded-full bg-white border border-slate-200 hover:border-violet-300">Entities</a>
-        <a href="#filesystem" class="px-3 py-1 rounded-full bg-white border border-slate-200 hover:border-violet-300">File structure</a>
         <a href="#remote" class="px-3 py-1 rounded-full bg-white border border-slate-200 hover:border-violet-300">Local vs remote</a>
         <a href="#cqrs" class="px-3 py-1 rounded-full bg-white border border-slate-200 hover:border-violet-300">CQRS</a>
       </nav>
     </header>
+
+    <!-- Hexagonal mental model -->
+    <section id="hexagon" class="section-anchor space-y-6">
+      <h2 class="text-2xl font-bold">Hexagonal mental model</h2>
+      <p class="text-slate-600 text-sm prose-width">
+        The <strong>application core</strong> lives in the Node host process. React is <strong>presentation</strong> — outside the hexagon — and calls in through a <strong>Host API client</strong>. External systems (Essentials project on disk, LLM APIs) sit on the <strong>driven</strong> side.
+      </p>
+      <div class="fig-card overflow-x-auto">
+        <table class="w-full text-sm">
+          <thead>
+            <tr class="border-b border-slate-200 bg-slate-50 text-left">
+              <th class="p-3 font-semibold">Hexagonal term</th>
+              <th class="p-3 font-semibold">What it represents</th>
+              <th class="p-3 font-semibold">In this app</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-slate-100">
+            <tr>
+              <td class="p-3 font-medium text-violet-800">Presentation</td>
+              <td class="p-3 text-slate-600">UI + client that forwards user intent</td>
+              <td class="p-3 font-mono text-xs">renderer/components, App.tsx, host-api/*</td>
+            </tr>
+            <tr>
+              <td class="p-3 font-medium text-blue-800">Driving port</td>
+              <td class="p-3 text-slate-600">Use cases the app exposes to actors</td>
+              <td class="p-3 font-mono text-xs">handleReadMap, handleAIChat, … (handlers.ts)</td>
+            </tr>
+            <tr>
+              <td class="p-3 font-medium text-blue-800">Driving adapters</td>
+              <td class="p-3 text-slate-600">Translate wire protocol → use case calls</td>
+              <td class="p-3 font-mono text-xs">electron-ipc.ts · http-api.ts <span class="text-slate-400">(split)</span></td>
+            </tr>
+            <tr>
+              <td class="p-3 font-medium text-emerald-800">Application core</td>
+              <td class="p-3 text-slate-600">Domain rules + orchestration; no UI, no disk format</td>
+              <td class="p-3 font-mono text-xs">handlers.ts + shared/ pure modules</td>
+            </tr>
+            <tr>
+              <td class="p-3 font-medium text-orange-800">Driven port</td>
+              <td class="p-3 text-slate-600">What the core needs from outside</td>
+              <td class="p-3 text-slate-600">Read/write opened game project · call LLM</td>
+            </tr>
+            <tr>
+              <td class="p-3 font-medium text-orange-800">Driven adapters</td>
+              <td class="p-3 text-slate-600">Implement those needs</td>
+              <td class="p-3 font-mono text-xs">project-data-client · ai-service-*</td>
+            </tr>
+            <tr>
+              <td class="p-3 font-medium text-slate-700">External systems</td>
+              <td class="p-3 text-slate-600">Authoritative stores the app must not re-invent</td>
+              <td class="p-3 font-mono text-xs">Essentials project Data/ · Anthropic / Google APIs</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="grid sm:grid-cols-2 gap-4 text-sm">
+        <div class="fig-card p-4 border-l-4 border-violet-500">
+          <strong>Host API client is not a hexagon adapter.</strong> It is the presentation-layer proxy that reaches the driving port — the caller side of the same API the driving adapters implement on the server side.
+        </div>
+        <div class="fig-card p-4 border-l-4 border-orange-500">
+          <strong>Project data layer</strong> = filesystem I/O for the opened game project. Format-specific code (Marshal, Ruby, <code>.rxdata</code>) lives only under <code>project-data/implementations/</code>.
+        </div>
+      </div>
+    </section>
+
+    <!-- Layer / hexagon diagram -->
+    <section id="layers" class="section-anchor space-y-6">
+      <h2 class="text-2xl font-bold">Layer diagram</h2>
+      <p class="text-slate-600 text-sm">Dashed box = hexagon (Node host). Purple = presentation. Orange stack below = <strong>project data layer</strong> (client + implementations → opened project on disk).</p>
+      <div class="fig-card p-4 sm:p-6">
+        <div class="arch-stack">
+          <div class="arch-layer layer-presentation">
+            <div class="arch-layer-title">Presentation — src/renderer (outside hexagon)</div>
+            <div class="arch-boxes">
+              <div class="arch-box">components/<span class="arch-box-sub">Workbench UI</span></div>
+              <div class="arch-box">App.tsx<span class="arch-box-sub">UI state</span></div>
+              <div class="arch-box"><code>host-api/client.ts</code><span class="arch-box-sub">facade → picks transport</span></div>
+              <div class="arch-box"><code>host-api/ipc-transport.ts</code><span class="arch-box-sub">Electron shell</span></div>
+              <div class="arch-box"><code>host-api/http-transport.ts</code><span class="arch-box-sub">browser / Playwright</span></div>
+            </div>
+          </div>
+
+          <div class="arch-arrow">Host API client → driving adapter (IPC or HTTP)</div>
+
+          <div class="arch-hex-wrap">
+            <div class="arch-hex-label">HEXAGON — Node host (electron-entry or browser-entry)</div>
+
+            <div class="arch-layer layer-driving">
+              <div class="arch-layer-title">Driving adapters (split)</div>
+              <div class="arch-boxes">
+                <div class="arch-box"><code>adapters/driving/electron-ipc.ts</code><span class="arch-box-sub">ipcMain.handle → handlers · push events</span></div>
+                <div class="arch-box"><code>adapters/driving/http-api.ts</code><span class="arch-box-sub">Express :3001 → handlers</span></div>
+              </div>
+            </div>
+
+            <div class="arch-arrow">wire protocol → use case</div>
+
+            <div class="arch-layer layer-core">
+              <div class="arch-layer-title">Application core</div>
+              <div class="arch-boxes">
+                <div class="arch-box"><code>handlers.ts</code><span class="arch-box-sub">use cases — transport-agnostic</span></div>
+                <div class="arch-box">chat-map-pipeline<span class="arch-box-sub">AI write path</span></div>
+                <div class="arch-box">delete-preflight<span class="arch-box-sub">integrity</span></div>
+                <div class="arch-box"><code>shared/</code> pure logic<span class="arch-box-sub">map tree, delete rules</span></div>
+              </div>
+            </div>
+
+            <div class="arch-arrow">needs filesystem / LLM</div>
+
+            <div class="arch-layer layer-driven">
+              <div class="arch-layer-title">Driven adapters</div>
+              <div class="arch-boxes">
+                <div class="arch-box"><code>adapters/driven/project-data-client.ts</code><span class="arch-box-sub">today: map-generator.ts</span></div>
+                <div class="arch-box">ai-service-*<span class="arch-box-sub">LLM providers</span></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="arch-arrow">delegate to implementation</div>
+
+          <div class="arch-layer layer-fs-impl">
+            <div class="arch-layer-title">Project data implementations — src/project-data/</div>
+            <div class="arch-boxes">
+              <div class="arch-box"><code>implementations/marshal-ruby/handler.rb</code><span class="arch-box-sub">today: src/bridge/marshal_handler.rb</span></div>
+            </div>
+          </div>
+
+          <div class="arch-arrow">bytes on disk</div>
+
+          <div class="arch-layer layer-disk">
+            <div class="arch-layer-title">External — opened game project</div>
+            <p>Project <code>Data/</code> tree (maps, map index, tilesets, system, scripts, …)</p>
+          </div>
+        </div>
+      </div>
+
+      <p class="text-sm text-slate-500">
+        <strong>Two hosts, same hexagon:</strong> <code>host/electron-entry.ts</code> boots IPC + HTTP + window;
+        <code>host/browser-entry.ts</code> boots HTTP only (lighter dev / Playwright on :5173).
+        Both share <code>handlers.ts</code> and the project data client.
+      </p>
+    </section>
+
+    <!-- Interaction diagram -->
+    <section id="interaction" class="section-anchor space-y-6">
+      <h2 class="text-2xl font-bold">Interaction — read map (example)</h2>
+      <p class="text-slate-600 text-sm">One driving port, two transports (<strong>alt</strong>), then a shared project-data tail. Sequence diagrams use the same layer colors as above; width is capped so type stays in scale with the rest of the page.</p>
+
+      <h3 class="text-lg font-semibold text-slate-800">1 — Transport (alt)</h3>
+      <div class="fig-card p-4 sm:p-6 mermaid-wrap mb-6" id="interaction-transport">
+        <pre class="mermaid">
+sequenceDiagram
+    autonumber
+    box #ede9fe Presentation
+        participant UI as React UI
+        participant Client as host-api client
+    end
+    box #dbeafe Driving adapters
+        participant IPC as electron-ipc
+        participant HTTP as http-api
+    end
+    box #d1fae5 Application core
+        participant Core as handlers
+    end
+
+    UI->>Client: invoke("read-map", …)
+
+    alt Electron shell · window.electron
+        Note over Client,IPC: ipc-transport
+        Client->>IPC: ipcRenderer.invoke
+        IPC->>Core: handleReadMap(projectPath, mapId)
+        Note over Core: project-data tail (diagram 2)
+        Core-->>IPC: MapReadData
+        IPC-->>Client: invoke result
+    else Browser tab or Playwright · no preload
+        Note over Client,HTTP: http-transport
+        Client->>HTTP: GET /api/read-map/:id
+        HTTP->>Core: handleReadMap(projectPath, mapId)
+        Note over Core: project-data tail (diagram 2)
+        Core-->>HTTP: MapReadData
+        HTTP-->>Client: 200 JSON
+    end
+    Client-->>UI: MapReadData
+        </pre>
+      </div>
+
+      <h3 class="text-lg font-semibold text-slate-800">2 — Project data tail (shared)</h3>
+      <div class="fig-card p-4 sm:p-6 mermaid-wrap" id="interaction-project-data">
+        <pre class="mermaid">
+sequenceDiagram
+    autonumber
+    box #d1fae5 Application core
+        participant Core as handlers
+    end
+    box #ffedd5 Project data layer
+        participant PDC as project-data-client
+        participant Impl as implementation
+    end
+    box #f1f5f9 Opened game project
+        participant Disk as game project Data/
+    end
+
+    Core->>PDC: readMap(projectPath, mapId)
+    PDC->>Impl: spawn read_map (marshal-ruby)
+    Impl->>Disk: read Map###.rxdata
+    Disk-->>Impl: bytes
+    Impl-->>PDC: JSON
+    PDC-->>Core: MapReadData
+        </pre>
+      </div>
+      <p class="text-sm text-slate-500">Write paths (chat → patch → disk) reuse the same <strong>alt</strong> at step 1–3; only the project-data operations in the tail change.</p>
+    </section>
 
     <!-- Stack decisions -->
     <section id="stack" class="section-anchor space-y-6">
@@ -90,99 +420,93 @@
       <div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
         <div class="fig-card p-5 space-y-2">
           <div class="fig-sticky border-violet-300 bg-violet-50 text-violet-900 font-semibold">Electron + React</div>
-          <p class="text-sm text-slate-600">Desktop app needs filesystem access, native dialogs, and long sessions. Electron wraps Chromium + Node; React is your TS UI skill from RN. Together: one codebase, local-first, no server to deploy for MVP.</p>
+          <p class="text-sm text-slate-600">Desktop app needs filesystem access, native dialogs, and long sessions. Electron wraps Chromium + Node; React workbench in the renderer process.</p>
         </div>
         <div class="fig-card p-5 space-y-2">
-          <div class="fig-sticky border-blue-300 bg-blue-50 text-blue-900 font-semibold">Ruby bridge</div>
-          <p class="text-sm text-slate-600">RMXP stores maps as Ruby <code>Marshal</code> blobs. Ruby reads/writes them natively. Reimplementing Marshal in TS is high risk for a POC; Ruby is a thin adapter at the disk seam.</p>
+          <div class="fig-sticky border-orange-300 bg-orange-50 text-orange-900 font-semibold">Project data layer</div>
+          <p class="text-sm text-slate-600">Generic filesystem I/O for the opened game project. Current format handler: <code>implementations/marshal-ruby/</code> — not part of the layer name.</p>
         </div>
         <div class="fig-card p-5 space-y-2">
           <div class="fig-sticky border-emerald-300 bg-emerald-50 text-emerald-900 font-semibold">On Essentials, not custom format</div>
-          <p class="text-sm text-slate-600">Product goal: playable games in the existing fan-dev ecosystem. Custom JSON/SQLite would require a full runtime rewrite. Essentials compatibility is the moat and the constraint.</p>
+          <p class="text-sm text-slate-600">Playable games in the existing fan-dev ecosystem. Custom JSON/SQLite would require a full runtime rewrite.</p>
         </div>
         <div class="fig-card p-5 space-y-2">
-          <div class="fig-sticky border-orange-300 bg-orange-50 text-orange-900 font-semibold">.rxdata files</div>
-          <p class="text-sm text-slate-600">Industry-standard for this niche (RMXP). Round-trip fidelity with Game.exe smoke tests. Trade-off: opaque binary, Ruby dependency, no git-friendly diffs.</p>
+          <div class="fig-sticky border-blue-300 bg-blue-50 text-blue-900 font-semibold">Split driving adapters</div>
+          <p class="text-sm text-slate-600">IPC for Electron shell (push events, native dialogs). HTTP for browser host and Playwright. Both call the same <code>handlers.ts</code> — not two backends.</p>
         </div>
         <div class="fig-card p-5 space-y-2">
-          <div class="fig-sticky border-pink-300 bg-pink-50 text-pink-900 font-semibold">Replace Ruby later?</div>
-          <p class="text-sm text-slate-600">Only if you leave RMXP entirely. While targeting Essentials, Ruby (or a proven Marshal library) stays. A TS-only path means owning serialization + every RPG::Map edge case.</p>
+          <div class="fig-sticky border-pink-300 bg-pink-50 text-pink-900 font-semibold">ADR 0001</div>
+          <p class="text-sm text-slate-600">Local-first, Essentials-compatible, Ruby-only disk writes (no TS Marshal fallback). See <code>docs/adr/0001-local-first-ruby-bridge.md</code>.</p>
         </div>
         <div class="fig-card p-5 space-y-2">
           <div class="fig-sticky border-slate-300 bg-slate-50 text-slate-800 font-semibold">Poor fits at this scale</div>
-          <p class="text-sm text-slate-600">Unity/Godot rewrite, microservices from day one, cloud-only SaaS without local disk access, or Tauri+Rust if team lacks systems skills and Ruby bridge already works.</p>
+          <p class="text-sm text-slate-600">Unity/Godot rewrite, microservices from day one, cloud-only SaaS without local disk access.</p>
         </div>
       </div>
     </section>
 
-    <!-- Layer diagram FigJam style -->
-    <section id="layers" class="section-anchor space-y-6">
-      <h2 class="text-2xl font-bold">Layer architecture</h2>
-      <p class="text-slate-600 text-sm">Hexagonal / ports-and-adapters: domain logic in the center; UI and I/O are adapters.</p>
-      <div class="fig-card p-4 sm:p-6 overflow-x-auto">
-        <svg viewBox="0 0 900 520" class="w-full min-w-[320px] max-w-[900px] mx-auto block" aria-label="Layer architecture diagram">
-          <defs>
-            <marker id="arrow" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto">
-              <polygon points="0 0, 8 4, 0 8" fill="#94a3b8" />
-            </marker>
-          </defs>
-          <!-- Renderer layer -->
-          <rect x="40" y="20" width="820" height="100" rx="12" fill="#ede9fe" stroke="#7c3aed" stroke-width="2" />
-          <text x="60" y="48" font-size="14" font-weight="700" fill="#5b21b6">Renderer — React (src/renderer)</text>
-          <rect x="60" y="58" width="130" height="48" rx="8" fill="#fff" stroke="#a78bfa" stroke-width="1.5" />
-          <text x="72" y="78" font-size="11" fill="#4c1d95">App.tsx</text>
-          <text x="72" y="94" font-size="10" fill="#64748b">orchestrates UI state</text>
-          <rect x="210" y="58" width="120" height="48" rx="8" fill="#fff" stroke="#a78bfa" stroke-width="1.5" />
-          <text x="222" y="78" font-size="11" fill="#4c1d95">components/</text>
-          <text x="222" y="94" font-size="10" fill="#64748b">Chat, Preview, Tree</text>
-          <rect x="350" y="58" width="120" height="48" rx="8" fill="#fff" stroke="#a78bfa" stroke-width="1.5" />
-          <text x="362" y="78" font-size="11" fill="#4c1d95">bridge.ts</text>
-          <text x="362" y="94" font-size="10" fill="#64748b">IPC or HTTP client</text>
-          <rect x="490" y="58" width="140" height="48" rx="8" fill="#fff" stroke="#a78bfa" stroke-width="1.5" />
-          <text x="502" y="78" font-size="11" fill="#4c1d95">shared/ (import)</text>
-          <text x="502" y="94" font-size="10" fill="#64748b">pure types + logic</text>
-
-          <!-- Transport -->
-          <rect x="120" y="150" width="660" height="72" rx="12" fill="#dbeafe" stroke="#2563eb" stroke-width="2" />
-          <text x="140" y="178" font-size="14" font-weight="700" fill="#1e40af">Transport adapters</text>
-          <rect x="160" y="188" width="200" height="24" rx="6" fill="#fff" stroke="#60a5fa" />
-          <text x="170" y="204" font-size="11" fill="#1e3a8a">ipc-handlers.ts (Electron)</text>
-          <rect x="400" y="188" width="200" height="24" rx="6" fill="#fff" stroke="#60a5fa" />
-          <text x="410" y="204" font-size="11" fill="#1e3a8a">api-server.ts (Express)</text>
-
-          <!-- Handlers -->
-          <rect x="80" y="252" width="740" height="120" rx="12" fill="#d1fae5" stroke="#059669" stroke-width="2" />
-          <text x="100" y="280" font-size="14" font-weight="700" fill="#065f46">handlers.ts — business logic (transport-agnostic)</text>
-          <rect x="100" y="292" width="150" height="40" rx="8" fill="#fff" stroke="#34d399" />
-          <text x="112" y="310" font-size="10" fill="#064e3b">chat-map-pipeline</text>
-          <text x="112" y="324" font-size="10" fill="#64748b">AI → map write</text>
-          <rect x="270" y="292" width="130" height="40" rx="8" fill="#fff" stroke="#34d399" />
-          <text x="282" y="310" font-size="10" fill="#064e3b">map-generator</text>
-          <text x="282" y="324" font-size="10" fill="#64748b">bridge caller</text>
-          <rect x="420" y="292" width="130" height="40" rx="8" fill="#fff" stroke="#34d399" />
-          <text x="432" y="310" font-size="10" fill="#064e3b">delete-preflight</text>
-          <text x="432" y="324" font-size="10" fill="#64748b">integrity scan</text>
-          <rect x="570" y="292" width="120" height="40" rx="8" fill="#fff" stroke="#34d399" />
-          <text x="582" y="310" font-size="10" fill="#064e3b">ai-service-*</text>
-          <text x="582" y="324" font-size="10" fill="#64748b">LLM providers</text>
-
-          <!-- Ruby -->
-          <rect x="200" y="400" width="500" height="72" rx="12" fill="#ffedd5" stroke="#ea580c" stroke-width="2" />
-          <text x="220" y="428" font-size="14" font-weight="700" fill="#9a3412">Ruby bridge (src/bridge)</text>
-          <text x="220" y="452" font-size="11" fill="#7c2d12">marshal_handler.rb — spawn from MapGenerator</text>
-
-          <!-- Disk -->
-          <rect x="120" y="490" width="660" height="24" rx="8" fill="#f1f5f9" stroke="#64748b" stroke-width="1.5" />
-          <text x="280" y="507" font-size="11" fill="#334155">Essentials project — Map###.rxdata, MapInfos.rxdata, Scripts.rxdata, Tilesets…</text>
-
-          <!-- Arrows -->
-          <path class="connector" d="M450 120 L450 150" />
-          <path class="connector" d="M450 222 L450 252" />
-          <path class="connector" d="M450 372 L450 400" />
-          <path class="connector" d="M450 472 L450 490" />
-        </svg>
+    <!-- Target file structure -->
+    <section id="filesystem" class="section-anchor space-y-6">
+      <h2 class="text-2xl font-bold">Target file structure</h2>
+      <p class="text-slate-600 text-sm">Validated layout (R9–R11). Italic entries = current path until refactor lands.</p>
+      <div class="grid lg:grid-cols-2 gap-4">
+        <div class="fig-card p-5">
+          <h3 class="font-semibold text-violet-800 mb-3">Repository tree</h3>
+          <pre class="tree text-slate-700 overflow-x-auto">src/
+├── shared/                          # domain types + pure logic (in hexagon)
+│   ├── types.ts
+│   ├── deleteIntegrity.ts
+│   └── …
+├── main/
+│   ├── host/
+│   │   ├── electron-entry.ts        # today: main.ts
+│   │   ├── browser-entry.ts         # today: browser-server.ts
+│   │   └── boot.ts                  # setConfigPath, handlers.boot(), start HTTP
+│   ├── handlers.ts                  # application core
+│   └── adapters/
+│       ├── driving/
+│       │   ├── electron-ipc.ts      # today: ipc-handlers.ts (IPC only)
+│       │   └── http-api.ts          # today: api-server.ts
+│       └── driven/
+│           ├── project-data-client.ts # today: map-generator.ts
+│           └── ai-service-*.ts
+├── project-data/                    # implementations only (not the layer name)
+│   └── implementations/
+│       └── marshal-ruby/            # today: src/bridge/marshal_handler.rb
+│           └── handler.rb
+└── renderer/                        # presentation (outside hexagon)
+    ├── host-api/
+    │   ├── client.ts                # today: services/bridge.ts (facade)
+    │   ├── ipc-transport.ts         # split from bridge.ts
+    │   └── http-transport.ts        # split from bridge.ts
+    ├── components/
+    └── App.tsx</pre>
+        </div>
+        <div class="fig-card p-5 space-y-4">
+          <div>
+            <h3 class="font-semibold text-emerald-700 mb-2">Naming rules</h3>
+            <ul class="text-sm text-slate-600 space-y-2 list-disc pl-5">
+              <li><strong>Project data layer</strong> — <code>project-data-client</code> + <code>project-data/implementations/*</code></li>
+              <li><strong>Host API</strong> — presentation proxy to driving port; split ipc + http transports</li>
+              <li><strong>Driving adapters</strong> — split ipc + http on main side</li>
+              <li>No generic “bridge” — see <code>CONTEXT.md</code></li>
+            </ul>
+          </div>
+          <div>
+            <h3 class="font-semibold text-orange-700 mb-2">Still to improve (backlog)</h3>
+            <ul class="text-sm text-slate-600 space-y-2 list-disc pl-5">
+              <li>R9 — move files into tree above</li>
+              <li>R1 — split <code>handlers.ts</code> by domain</li>
+              <li>R10/R2 — typed application port (one contract, three mappings)</li>
+              <li>R7/R8 — Ruby-only writes + unified spawn errors</li>
+            </ul>
+          </div>
+        </div>
       </div>
-      <p class="text-sm text-slate-500"><strong>“Local backend”</strong> = Node in Electron main process (or standalone via browser-server.ts). Not a remote server — it runs on the user’s machine with filesystem access.</p>
+      <div class="fig-card p-5">
+        <h3 class="font-semibold mb-2">Why <code>shared/</code>?</h3>
+        <p class="text-sm text-slate-600">Electron forbids importing main-process code in the renderer. Shared holds types and pure functions both sides need: map tree logic, delete rules, read→preview transforms. No fs, no window, no AI keys.</p>
+      </div>
     </section>
 
     <!-- Component walkthrough -->
@@ -192,50 +516,43 @@
         <li class="fig-card p-5 flex gap-4">
           <span class="flex-shrink-0 w-8 h-8 rounded-full bg-violet-600 text-white flex items-center justify-center font-bold text-sm">1</span>
           <div>
-            <h3 class="font-semibold text-lg">shared/types.ts + pure modules</h3>
-            <p class="text-sm text-slate-600 mt-1">Domain types (<code>MapData</code>, <code>MapSpec</code>) and logic with no Electron/React imports: tree building, delete integrity, map transforms. Testable everywhere.</p>
+            <h3 class="font-semibold text-lg">shared/ — domain types + pure logic</h3>
+            <p class="text-sm text-slate-600 mt-1"><code>MapData</code>, <code>MapSpec</code>, delete integrity, map tree. Part of the application core; no Electron/React imports.</p>
           </div>
         </li>
         <li class="fig-card p-5 flex gap-4">
           <span class="flex-shrink-0 w-8 h-8 rounded-full bg-violet-600 text-white flex items-center justify-center font-bold text-sm">2</span>
           <div>
-            <h3 class="font-semibold text-lg">MapGenerator + marshal_handler.rb</h3>
-            <p class="text-sm text-slate-600 mt-1">Spawns Ruby with JSON args; reads/writes binary RMXP structures. The disk I/O adapter.</p>
+            <h3 class="font-semibold text-lg">Project data layer</h3>
+            <p class="text-sm text-slate-600 mt-1"><strong>Client</strong> (driven adapter): <code>project-data-client.ts</code> (today <em>MapGenerator</em>). <strong>Implementation</strong>: <code>project-data/implementations/marshal-ruby/</code> (today <em>src/bridge/</em>).</p>
           </div>
         </li>
         <li class="fig-card p-5 flex gap-4">
           <span class="flex-shrink-0 w-8 h-8 rounded-full bg-violet-600 text-white flex items-center justify-center font-bold text-sm">3</span>
           <div>
-            <h3 class="font-semibold text-lg">handlers.ts</h3>
-            <p class="text-sm text-slate-600 mt-1">All use cases: chat, read map, delete preflight, tileset inspector. Single entry for IPC and HTTP. <em>Not</em> Electron-specific.</p>
+            <h3 class="font-semibold text-lg">handlers.ts — application core</h3>
+            <p class="text-sm text-slate-600 mt-1">All use cases. Single surface for both driving adapters. Not Electron-specific.</p>
           </div>
         </li>
         <li class="fig-card p-5 flex gap-4">
           <span class="flex-shrink-0 w-8 h-8 rounded-full bg-violet-600 text-white flex items-center justify-center font-bold text-sm">4</span>
           <div>
-            <h3 class="font-semibold text-lg">ipc-handlers.ts / api-server.ts</h3>
-            <p class="text-sm text-slate-600 mt-1">Thin adapters mapping channels/routes → handler functions. Browser dev uses Express on :3001; Electron uses ipcMain.</p>
+            <h3 class="font-semibold text-lg">Driving adapters — electron-ipc + http-api (split)</h3>
+            <p class="text-sm text-slate-600 mt-1">Wire formats → handler calls. IPC for Electron shell; HTTP :3001 for browser host and Playwright.</p>
           </div>
         </li>
         <li class="fig-card p-5 flex gap-4">
           <span class="flex-shrink-0 w-8 h-8 rounded-full bg-violet-600 text-white flex items-center justify-center font-bold text-sm">5</span>
           <div>
-            <h3 class="font-semibold text-lg">bridge.ts (renderer)</h3>
-            <p class="text-sm text-slate-600 mt-1">Unified client: <code>window.electron.invoke</code> in desktop, <code>fetch</code> to Express in browser mode. UI never imports Electron directly.</p>
+            <h3 class="font-semibold text-lg">Host API — client + ipc-transport + http-transport</h3>
+            <p class="text-sm text-slate-600 mt-1">Presentation-layer proxy. Components call <code>hostApi.invoke</code>; client delegates to the correct transport. UI never imports Electron directly.</p>
           </div>
         </li>
         <li class="fig-card p-5 flex gap-4">
           <span class="flex-shrink-0 w-8 h-8 rounded-full bg-violet-600 text-white flex items-center justify-center font-bold text-sm">6</span>
           <div>
-            <h3 class="font-semibold text-lg">App.tsx — your app shell, not framework infra</h3>
-            <p class="text-sm text-slate-600 mt-1">Root React component: holds project path, chat messages, preview state, map tree. Same role as your RN root navigator + screen state — project-specific, not provided by Electron/React.</p>
-          </div>
-        </li>
-        <li class="fig-card p-5 flex gap-4">
-          <span class="flex-shrink-0 w-8 h-8 rounded-full bg-violet-600 text-white flex items-center justify-center font-bold text-sm">7</span>
-          <div>
-            <h3 class="font-semibold text-lg">Workbench components</h3>
-            <p class="text-sm text-slate-600 mt-1">MapPreview (canvas), MapsTree (dnd-kit), ChatInterface, modals. Presentation only; call bridge for data.</p>
+            <h3 class="font-semibold text-lg">App.tsx + workbench components</h3>
+            <p class="text-sm text-slate-600 mt-1">MapPreview, MapsTree, ChatInterface, modals. Presentation only; call Host API for data.</p>
           </div>
         </li>
       </ol>
@@ -244,7 +561,7 @@
     <!-- ERD -->
     <section id="entities" class="section-anchor space-y-6">
       <h2 class="text-2xl font-bold">Domain entities (Essentials project)</h2>
-      <p class="text-sm text-slate-600">Logical relationships on disk — not a SQL schema.</p>
+      <p class="text-sm text-slate-600">Logical relationships on disk — not a SQL schema. The <strong>project data layer</strong> reads/writes these via implementations; the app uses normalized TS types in memory.</p>
       <div class="erd-grid grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
         <div class="erd-table">
           <div class="erd-header">MapInfos.rxdata</div>
@@ -291,35 +608,6 @@
       </div>
     </section>
 
-    <!-- File structure -->
-    <section id="filesystem" class="section-anchor space-y-6">
-      <h2 class="text-2xl font-bold">File structure critique</h2>
-      <div class="grid md:grid-cols-2 gap-4">
-        <div class="fig-card p-5 space-y-3">
-          <h3 class="font-semibold text-emerald-700">Works well</h3>
-          <ul class="text-sm text-slate-600 space-y-2 list-disc pl-5">
-            <li><code>main/</code> vs <code>renderer/</code> vs <code>shared/</code> — standard Electron split</li>
-            <li><code>shared/</code> — pure TS usable from main and renderer tests</li>
-            <li>Handlers separated from transport — interview-ready hexagonal story</li>
-            <li><code>docs/plans/</code> + <code>VISION.md</code> — product north star</li>
-          </ul>
-        </div>
-        <div class="fig-card p-5 space-y-3">
-          <h3 class="font-semibold text-orange-700">Improve over time</h3>
-          <ul class="text-sm text-slate-600 space-y-2 list-disc pl-5">
-            <li><code>handlers.ts</code> is large (~1000+ lines) — split by domain when executor lands</li>
-            <li>No <code>docs/adr/</code> yet — record stack + patch-first decisions</li>
-            <li><code>docs/prompts/</code> planned but missing — agent layer not in repo</li>
-            <li>README was stale vs actual stack — now fixed separately</li>
-          </ul>
-        </div>
-      </div>
-      <div class="fig-card p-5">
-        <h3 class="font-semibold mb-2">Why <code>shared/</code>?</h3>
-        <p class="text-sm text-slate-600">Electron forbids importing main-process code in renderer. Shared holds types and pure functions both sides need: map tree logic, delete rules, read→preview transforms. No fs, no window, no AI keys.</p>
-      </div>
-    </section>
-
     <!-- Remote backend -->
     <section id="remote" class="section-anchor space-y-6">
       <h2 class="text-2xl font-bold">Local vs remote backend</h2>
@@ -328,8 +616,8 @@
           <h3 class="font-semibold">Stay local (now)</h3>
           <ul class="text-sm text-slate-600 mt-2 space-y-1 list-disc pl-5">
             <li>User’s Essentials folder stays on their machine</li>
+            <li>Project data layer requires local filesystem access</li>
             <li>No hosting cost, no map asset upload privacy issues</li>
-            <li>Ruby spawn + large file I/O fit local process</li>
             <li>MVP: AI keys can stay local (user-provided)</li>
           </ul>
         </div>
@@ -339,11 +627,10 @@
             <li>Hosted AI proxy (hide keys, rate limits, billing)</li>
             <li>Team collaboration / shared Game Bible</li>
             <li>Heavy vision jobs (tileset labeling at scale)</li>
-            <li>Analytics, template marketplace</li>
           </ul>
         </div>
       </div>
-      <p class="text-sm text-slate-600 fig-card p-4"><strong>Design impact:</strong> Keep <code>handlers.ts</code> as domain core. Remote becomes another adapter (HTTP client to your Scala/Protobuf service) — same pattern as IPC today. Renderer unchanged if bridge targets configurable base URL. Do not merge domain logic into a cloud monolith early.</p>
+      <p class="text-sm text-slate-600 fig-card p-4"><strong>Design impact:</strong> Keep <code>handlers.ts</code> as application core. Remote becomes another <em>driven</em> adapter — same pattern as project-data and LLM clients. Host API <code>http-transport</code> gets a configurable base URL; domain logic does not move to a cloud monolith.</p>
     </section>
 
     <!-- CQRS -->
@@ -351,13 +638,133 @@
       <h2 class="text-2xl font-bold">CQRS (and how this project uses it)</h2>
       <div class="fig-card p-5 space-y-3">
         <p class="text-sm text-slate-700"><strong>CQRS</strong> = Command Query Responsibility Segregation. Separate the <em>read model</em> (queries, previews, summaries) from the <em>write model</em> (commands, patches, file writes).</p>
-        <p class="text-sm text-slate-600">Here: <code>read-map</code> / preview canvas = query side. Chat → MapPatch → executor → Ruby write = command side. Planned specialists produce patches (commands); validator + executor apply them. You don’t need event sourcing or separate databases to benefit from the split — just clear read vs write paths and patch-first edits.</p>
+        <p class="text-sm text-slate-600">Here: <code>read-map</code> / preview canvas = query side. Chat → MapPatch → executor → project-data write = command side. Planned specialists produce patches (commands); validator + executor apply them. Clear read vs write paths and patch-first edits — no event sourcing required.</p>
       </div>
     </section>
 
     <footer class="text-sm text-slate-500 pt-8 border-t border-slate-200">
-      <p>Companion: <code>docs/design-process.md</code> · Domain glossary: <code>CONTEXT.md</code> · Open this file locally in a browser.</p>
+      <p>Companion: <code>docs/design-process.md</code> · Domain glossary: <code>CONTEXT.md</code> · ADR: <code>docs/adr/0001-local-first-ruby-bridge.md</code></p>
     </footer>
   </div>
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+  <script>
+    mermaid.initialize({
+      startOnLoad: true,
+      theme: 'base',
+      themeVariables: {
+        fontSize: '16px',
+        fontFamily: 'ui-sans-serif, system-ui, sans-serif',
+        primaryColor: '#ede9fe',
+        primaryBorderColor: '#7c3aed',
+        primaryTextColor: '#4c1d95',
+        secondaryColor: '#dbeafe',
+        secondaryBorderColor: '#2563eb',
+        secondaryTextColor: '#1e3a8a',
+        tertiaryColor: '#d1fae5',
+        tertiaryBorderColor: '#059669',
+        tertiaryTextColor: '#064e3b',
+        lineColor: '#94a3b8',
+        signalColor: '#475569',
+        actorBkg: '#ffffff',
+        actorBorder: '#94a3b8',
+        actorTextColor: '#334155',
+        actorLineColor: '#cbd5e1',
+        noteBkgColor: '#fafafa',
+        noteTextColor: '#475569',
+        noteBorderColor: '#94a3b8',
+        labelBoxBkgColor: '#ede9fe',
+        labelBoxBorderColor: '#a78bfa',
+        labelTextColor: '#5b21b6',
+        loopTextColor: '#5b21b6',
+        activationBorderColor: '#34d399',
+        activationBkgColor: '#ecfdf5',
+      },
+      securityLevel: 'loose',
+      sequence: {
+        actorMargin: 65,
+        messageMargin: 40,
+        boxMargin: 10,
+        boxTextMargin: 6,
+        noteMargin: 10,
+        mirrorActors: false,
+        useMaxWidth: true,
+        width: 148,
+        height: 55,
+        actorFontSize: 16,
+        actorFontFamily: 'ui-sans-serif, system-ui, sans-serif',
+        noteFontSize: 13,
+        messageFontSize: 15,
+        messageFontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+      },
+    });
+
+    /** Apply layer palette — sort by x; Mermaid DOM order is reversed vs left-to-right. */
+    (function styleInteractionDiagrams() {
+      const L = {
+        purple: { bg: '#ede9fe', border: '#7c3aed', box: '#a78bfa', text: '#4c1d95' },
+        blue:   { bg: '#dbeafe', border: '#2563eb', box: '#60a5fa', text: '#1e3a8a' },
+        green:  { bg: '#d1fae5', border: '#059669', box: '#34d399', text: '#064e3b' },
+        orange: { bg: '#ffedd5', border: '#ea580c', box: '#fb923c', text: '#7c2d12' },
+        disk:   { bg: '#f1f5f9', border: '#64748b', box: '#94a3b8', text: '#334155' },
+      };
+
+      function byX(el) {
+        return parseFloat(el.getAttribute('x') || el.querySelector('rect')?.getAttribute('x') || '0');
+      }
+
+      function paint(containerId, clusterKeys, actorKeys) {
+        const svg = document.querySelector('#' + containerId + ' svg');
+        if (!svg) return;
+
+        const clusters = [...svg.querySelectorAll('rect')]
+          .filter(r => r.classList.contains('rect') && !r.classList.contains('actor-top') && !r.classList.contains('note'))
+          .sort((a, b) => byX(a) - byX(b));
+
+        const actorRects = [...svg.querySelectorAll('rect.actor-top')];
+        const actorLabels = [...svg.querySelectorAll('text.actor-box')];
+        const actors = actorRects.map((rect, i) => ({ rect, label: actorLabels[i], x: byX(rect) }))
+          .sort((a, b) => a.x - b.x);
+
+        clusters.forEach((r, i) => {
+          const c = L[clusterKeys[i]];
+          if (!c) return;
+          r.setAttribute('fill', c.bg);
+          r.setAttribute('stroke', c.border);
+          r.setAttribute('stroke-width', '2');
+        });
+        actors.forEach(({ rect, label }, i) => {
+          const c = L[actorKeys[i]];
+          if (!c) return;
+          rect.setAttribute('fill', '#ffffff');
+          rect.setAttribute('stroke', c.box);
+          rect.setAttribute('stroke-width', '1.5');
+          if (label) label.setAttribute('fill', c.text);
+        });
+        svg.querySelectorAll('rect.note').forEach(n => {
+          n.setAttribute('fill', '#fafafa');
+          n.setAttribute('stroke', '#94a3b8');
+        });
+        svg.querySelectorAll('.noteText').forEach(t => t.setAttribute('fill', '#475569'));
+        svg.querySelectorAll('polygon.labelBox').forEach(p => {
+          p.setAttribute('fill', L.purple.bg);
+          p.setAttribute('stroke', L.purple.border);
+        });
+        svg.querySelectorAll('.labelText, .loopText').forEach(t => t.setAttribute('fill', '#5b21b6'));
+      }
+
+      function run() {
+        paint('interaction-transport',
+          ['purple', 'blue', 'green'],
+          ['purple', 'purple', 'blue', 'blue', 'green']);
+        paint('interaction-project-data',
+          ['green', 'orange', 'disk'],
+          ['green', 'orange', 'orange', 'disk']);
+      }
+
+      const kick = () => requestAnimationFrame(() => requestAnimationFrame(run));
+      if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', kick);
+      else kick();
+    })();
+  </script>
 </body>
 </html>
