@@ -151,6 +151,33 @@ handlers.ts → MapGenerator → spawn(ruby, marshal_handler.rb, <command>, <pat
 
 **Deliverables:** Update architecture overview if wrong. ADR: handlers-as-domain-core. Backlog: split handlers, typed bridge contract.
 
+### Session 2 validation snapshot *(in progress 2025-06-27)*
+
+**Transport & core flow (validated)**
+
+```
+Renderer bridge.ts → IPC (ipc-handlers) or HTTP (api-server :3001)
+                   → handlers.ts (application core)
+                   → MapGenerator / chat-map-pipeline / ProjectService / delete-preflight
+```
+
+| Quality pillar | Finding |
+|----------------|---------|
+| **Standard** | `handlers.ts` has no Electron/Express imports. `ipc-handlers.ts` and `api-server.ts` are thin delegates. |
+| **Readable** | Read path: tree → `read-map` → `handleReadMap` → Ruby. Write path (today): chat → `handleAIChat` → `chat-map-pipeline` → disk. |
+| **Modular** | **Gap:** `handlers.ts` is **~1,100 lines** (~500 lines private test-map generators + tileset asset I/O). String IPC/HTTP channels duplicated in three places (`ipc-handlers`, `api-server`, `bridge.ts`). |
+| **Fit** | Dual transport justified: IPC push for delete-preflight; HTTP for browser host + Playwright; same handlers either way. |
+
+**Decisions recorded:** [ADR 0002](./adr/0002-handlers-as-domain-core.md) — application core in `handlers.ts`; keep IPC + Express driving adapters.
+
+**Decided:** **R1 before R3** — split `handlers.ts` by domain (config / maps / ai) and extract test-map + tileset-asset helpers **before** executor skeleton PR; no behavior change in R1. **Dual transport:** keep both (Session 1 + validated in code). **PR order:** R1 → R2/R10 (typed port) → R9/R11 (folder renames); R7/R8 parallel anytime.
+
+**R1 target modules (implementation scope):** `handlers/config-handlers.ts`, `handlers/map-handlers.ts`, `handlers/ai-handlers.ts`, thin `handlers.ts` barrel; extract `map-test-generators.ts`, `tileset-asset-resolver.ts` from private helpers.
+
+**Still open (Session 2):** R9/R11 timing — folder restructure same PR as R2 or immediately after (recommend after R2).
+
+**Status:** Session 2 in progress — core decisions recorded; one open item (R9 timing). Next: finish Session 2 or start Session 3.
+
 ---
 
 ## Session 3 — Domain model & target executor
@@ -199,7 +226,7 @@ handlers.ts → MapGenerator → spawn(ruby, marshal_handler.rb, <command>, <pat
 **Goal:** Single story across code, architecture docs, and MVP sequencing.
 
 **Validate:**
-- MVP plan PR order matches validated seams (executor before/after handler split — resolved from backlog).
+- MVP plan PR order matches validated seams (handler split before executor — resolved Session 2).
 - `docs/architecture/overview.html` matches post-refactor structure.
 - `CONTEXT.md` complete for current + next milestone terms.
 - ADRs indexed; no stale claims in README.
@@ -214,11 +241,11 @@ Concrete work from validation — each row should cite which quality pillar it f
 
 | ID | Item | Pillar | Session | Scope | Status |
 |----|------|--------|---------|-------|--------|
-| R1 | Split `handlers.ts` by domain (maps / ai / config) | Modular / readable | 2 | 1–2 PRs | Open |
+| R1 | Split `handlers.ts` by domain (maps / ai / config); extract test-map + tileset-asset helpers | Modular / readable | 2 | 1–2 PRs | Open — **before R3** (Session 2) |
 | R2 | Typed bridge contract (replace string channels) | Standard / readable | 2 | 1 PR | Open |
 | R3 | Executor module skeleton + validator seam | Fit / modular | 3 | 1 PR | Open |
 | R4 | `docs/prompts/` with orchestrator PR | Align | 3 | with agent PR | Open |
-| R5 | ADR batch (0001–0003) | Align | 1–5 | docs | In progress — [0001](./adr/0001-local-first-ruby-bridge.md) done |
+| R5 | ADR batch (0001–0003) | Align | 1–5 | docs | In progress — [0001](./adr/0001-local-first-ruby-bridge.md), [0002](./adr/0002-handlers-as-domain-core.md) done |
 | R6 | Reconcile MVP plan todos with AGENTS build order (Game Bible, prompts, executor) | Align | 6 | docs | Open |
 | R7 | Remove TS `patchMapDataBinary` fallback; Ruby-only RXData writes | Standard / fit | 1 | 1 PR | Open — decided Session 1 |
 | R8 | Unify Ruby-missing error messages across all `MapGenerator` spawn sites | Readable | 1 | 1 PR | Open — decided Session 1 |
@@ -245,8 +272,9 @@ Add rows as sessions find gaps. Close with PR or ADR reference.
 
 | # | Question | Status | Session |
 |---|----------|--------|---------|
-| 1 | Split `handlers.ts` before or with executor PR? | Open | 2 |
-| 2 | Keep both IPC and Express long-term? | Open — IPC for Electron shell; HTTP for Playwright/external browser and browser-only host; both delegate to same handlers | 2 |
+| 1 | Split `handlers.ts` before or with executor PR? | **Resolved — before executor (R1 then R3)** | 2 |
+| 2 | Keep both IPC and Express long-term? | **Resolved — keep both** ([ADR 0002](./adr/0002-handlers-as-domain-core.md)) | 2 |
+| 2b | R9/R11 folder restructure same PR as R2 or after? | Open — recommend after R2/R10 | 2 |
 | 3 | Executor: evolve `chat-map-pipeline` in place vs new `executor/` module? | Open | 3 |
 | 4 | Council-style review for orchestrator layout? | Open — default no | 3 |
 
