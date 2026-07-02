@@ -10,7 +10,7 @@ Essentials.
 - **CRITICAL**: If you need visual context of the app's current state (UI layout, style issues, console errors, or specific component behavior), you MUST ask the user to provide a screenshot or copy-paste the console output.
 
 ## Code Standards
-- **TypeScript**: Use strict typing. Shared types live in `src/shared/types.ts`.
+- **TypeScript**: Use strict typing. Shared types live in `src/shared/types.ts`. Style follows layer: functional React + hooks in `renderer/`; handler functions and pure `shared/` helpers; thin `class X implements IY` for driven adapters in `main/`; plain functions for adapter wiring (see `docs/adr/0003-typescript-style-by-layer.md`).
 - **Electron**: IPC communication is the standard for frontend-backend interaction.
 - **Ruby Bridge**: All `.rxdata` manipulation MUST go through the Ruby bridge (`src/bridge/`).
 - **Styles**: Use Tailwind CSS for all UI components.
