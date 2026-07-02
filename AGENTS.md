@@ -153,6 +153,17 @@ When **`docs/plans/mvp_implementation_plan_a41c92e4.plan.md`** conflicts with VI
 
 Match existing handlers, bridge, workbench patterns. Minimal diffs. Conventional commits. Branch from `master`.
 
+### TypeScript style by layer
+
+See [ADR 0003](./docs/adr/0003-typescript-style-by-layer.md). Summary:
+
+- **`src/renderer/`** — functional React components and hooks only (no class components).
+- **`handlers.ts` / `src/shared/`** — exported functions and pure helpers; no transport or I/O.
+- **Driven adapters** — thin `class X implements IY`; instance config in the constructor; no domain logic in adapters.
+- **Adapter wiring** — plain functions (e.g. `createAIService()`), not static factory classes.
+
+Do not flatten the codebase to a single style; follow the layer you are editing.
+
 ---
 
 ## Quick links

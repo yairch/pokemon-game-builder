@@ -205,6 +205,7 @@ Renderer bridge.ts → IPC (ipc-handlers) or HTTP (api-server :3001)
 - **Readable:** `shared/` vs `main/` vs `renderer/` — obvious what goes where?
 - **Standard:** Tests colocated; pure logic in `shared/`; no I/O there.
 - **Align:** README vs VISION vs CONTEXT — one owner per concern; `PROJECT_CONTEXT.md` pointer only.
+- **Conventions:** TS/React style documented per layer (functional UI + handler functions vs adapter classes) — see [ADR 0003](./adr/0003-typescript-style-by-layer.md). Not a standalone session topic unless a mismatch blocks contributors.
 
 **Deliverables:** Doc fixes. ADRs from sessions 1–3. Prioritized refactor backlog. GitHub README reflects validated architecture.
 
@@ -247,7 +248,7 @@ Concrete work from validation — each row should cite which quality pillar it f
 | R2 | Typed bridge contract (replace string channels) | Standard / readable | 2 | 1 PR | Open |
 | R3 | Executor module skeleton + validator seam | Fit / modular | 3 | 1 PR | Open |
 | R4 | `docs/prompts/` with orchestrator PR | Align | 3 | with agent PR | Open |
-| R5 | ADR batch (0001–0003) | Align | 1–5 | docs | In progress — [0001](./adr/0001-local-first-ruby-bridge.md), [0002](./adr/0002-handlers-as-domain-core.md) done |
+| R5 | ADR batch (0001–0003) | Align | 1–5 | docs | Done — [0001](./adr/0001-local-first-ruby-bridge.md), [0002](./adr/0002-handlers-as-domain-core.md), [0003](./adr/0003-typescript-style-by-layer.md) |
 | R6 | Reconcile MVP plan todos with AGENTS build order (Game Bible, prompts, executor) | Align | 6 | docs | Open |
 | R7 | Remove TS `patchMapDataBinary` fallback; Ruby-only RXData writes | Standard / fit | 1 | 1 PR | Open — decided Session 1 |
 | R8 | Unify Ruby-missing error messages across all `MapGenerator` spawn sites | Readable | 1 | 1 PR | Open — decided Session 1 |
