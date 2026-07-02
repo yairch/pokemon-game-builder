@@ -131,7 +131,9 @@ handlers.ts → MapGenerator → spawn(ruby, marshal_handler.rb, <command>, <pat
 
 **Decided:** Remove TS `patchMapDataBinary` fallback — Ruby-only RXData writes (R7). Unify Ruby-missing error messages via shared helper (R8). **Dual host:** Electron desktop = primary dogfood path; `browser-server` = optional lightweight dev host (keep, not delete). Playwright / AI vision: automate `http://localhost:5173` — works with **either** host because both run Express on :3001 and the renderer falls back to HTTP when `window.electron` is absent (Playwright’s browser is not the Electron shell). Domain code (`handlers.ts`, `MapGenerator`) stays host-agnostic.
 
-**Naming (Session 1 → 2 handoff):** Drop generic “bridge”. Filesystem/data = **project data layer** (`project-data-client` + `project-data/implementations/*`). Main = **driving** + **driven** adapters (IPC/HTTP split). Renderer = **presentation** + **Host API**. Implementation names (marshal-ruby, rxdata) live only under `implementations/`. See R9–R11.
+**Naming (Session 1 → 2 handoff):** Drop generic “bridge”. Filesystem/data = **game data layer** (`GameDataStore` + `game-data/implementations/*`). User opens an **Essentials project** (folder); layer name describes capability, not “project”. Main = **driving** + **driven** adapters (IPC/HTTP split). Renderer = **presentation** + **Host API**. Implementation names (marshal-ruby, rxdata) live only under `implementations/`. See R9–R11.
+
+**Naming (Session 2):** Driven disk adapter = **GameDataStore** (decided over GameDataGateway and project-data-client). Code path target: `game-data-store.ts` (today `map-generator.ts`).
 
 **Status:** Session 1 complete. Next: Session 2 — transport & domain core (R1, R2, R9, R11).
 
@@ -174,7 +176,7 @@ Renderer bridge.ts → IPC (ipc-handlers) or HTTP (api-server :3001)
 
 **R1 target modules (implementation scope):** `handlers/config-handlers.ts`, `handlers/map-handlers.ts`, `handlers/ai-handlers.ts`, thin `handlers.ts` barrel; extract `map-test-generators.ts`, `tileset-asset-resolver.ts` from private helpers.
 
-**Decided (R9/R11 timing):** Folder restructure **after R2/R10** — typed application port first, then mechanical moves (`host/`, `adapters/`, `host-api/`, `project-data-client`).
+**Decided (R9/R11 timing):** Folder restructure **after R2/R10** — typed application port first, then mechanical moves (`host/`, `adapters/`, `host-api/`, `game-data-store`).
 
 **Status:** Session 2 complete. Next: Session 3 — domain model & target executor (R3, R4).
 
@@ -249,9 +251,9 @@ Concrete work from validation — each row should cite which quality pillar it f
 | R6 | Reconcile MVP plan todos with AGENTS build order (Game Bible, prompts, executor) | Align | 6 | docs | Open |
 | R7 | Remove TS `patchMapDataBinary` fallback; Ruby-only RXData writes | Standard / fit | 1 | 1 PR | Open — decided Session 1 |
 | R8 | Unify Ruby-missing error messages across all `MapGenerator` spawn sites | Readable | 1 | 1 PR | Open — decided Session 1 |
-| R9 | Restructure: `main/host/`, `adapters/driving|driven/`, `project-data/implementations/`, split Host API | Readable / modular | 2 | 1–2 PRs | Open — **after R2/R10** (Session 2) |
+| R9 | Restructure: `main/host/`, `adapters/driving|driven/`, `game-data/implementations/`, split Host API | Readable / modular | 2 | 1–2 PRs | Open — **after R2/R10** (Session 2) |
 | R10 | Typed application port; share contract between Host API transports and driving adapters (extends R2) | Standard / readable | 2 | with R2 | Open |
-| R11 | Rename `bridge.ts` → `host-api/`; `MapGenerator` → `project-data-client.ts` | Readable | 2 | with R9 | Open — **after R2/R10** (Session 2) |
+| R11 | Rename `bridge.ts` → `host-api/`; `MapGenerator` → `GameDataStore` (`game-data-store.ts`) | Readable | 2 | with R9 | Open — **after R2/R10** (Session 2) |
 
 Add rows as sessions find gaps. Close with PR or ADR reference.
 

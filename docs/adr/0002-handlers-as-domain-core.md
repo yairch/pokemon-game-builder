@@ -6,4 +6,4 @@ The Electron host boots **both** adapters: IPC for the desktop shell (native dia
 
 **Considered:** IPC-only (drop Express); separate domain services per transport; moving use cases into renderer. **Rejected** because HTTP fallback and Playwright automation are already wired; duplicating handlers per transport would drift; renderer must stay presentation-only.
 
-**Consequences:** Handler split (R1) and typed application port (R2/R10) refactor this surface without changing product behavior. Executor skeleton (R3) lands **after** R1 so new write-path code has a clear module home. Folder renames (R9–R11) land **after R2/R10** — typed port first, then mechanical moves to `host/`, `adapters/`, `host-api/`, `project-data-client`.
+**Consequences:** Handler split (R1) and typed application port (R2/R10) refactor this surface without changing product behavior. Executor skeleton (R3) lands **after** R1 so new write-path code has a clear module home. Folder renames (R9–R11) land **after R2/R10** — typed port first, then mechanical moves to `host/`, `adapters/`, `host-api/`, `GameDataStore` (`game-data-store.ts`).
