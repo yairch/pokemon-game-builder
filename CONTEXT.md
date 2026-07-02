@@ -8,17 +8,17 @@ Domain language for the Essentials companion app. Implementation lives in code a
 The user’s RPG Maker XP game folder containing `Game.exe`, `Data/`, and Pokémon Essentials scripts.
 _Avoid_: game repo, RMXP project (when meaning the on-disk folder the app opens)
 
-**Project data layer**:
-Read/write the **opened game project** on disk — maps, map tree, tilesets, and related project files. The app’s filesystem I/O boundary toward the live project folder; implementation-agnostic (no Ruby, Marshal, or `.rxdata` in the name).
-_Avoid_: bridge, persistence, RXData adapter, Essentials (in layer/code names)
+**Game data layer**:
+Read/write the **opened Essentials project** on disk — maps, map tree, tilesets, and related files. The app’s filesystem I/O boundary toward the live game folder; implementation-agnostic (no Ruby, Marshal, or `.rxdata` in the name).
+_Avoid_: bridge, persistence, project data (layer name — “project” is user-facing for the opened folder), RXData adapter, Essentials (in layer/code names)
 
-**Project data client**:
-Driven adapter in the main process that the application core calls for project data I/O. Orchestrates spawn/read/write; speaks JSON to the core, delegates format work to a **project data implementation**.
-_Avoid_: MapGenerator (legacy name), bridge, backend
+**GameDataStore**:
+Driven adapter in the main process that the application core calls for game data I/O. Orchestrates spawn/read/write; speaks JSON to the core, delegates format work to a **game data implementation**.
+_Avoid_: MapGenerator (legacy name), project-data-client, bridge, backend
 
-**Project data implementation**:
-Concrete on-disk format handler under `project-data/implementations/` (e.g. `marshal-ruby/` today). Swappable without renaming the layer.
-_Avoid_: Ruby bridge, essentials-fs, rxdata folder
+**Game data implementation**:
+Concrete on-disk format handler under `game-data/implementations/` (e.g. `marshal-ruby/` today). Swappable without renaming the layer.
+_Avoid_: Ruby bridge, essentials-fs, rxdata folder, project-data
 
 **RXData**:
 An on-disk file format used by RPG Maker XP projects (`Map###.rxdata`, …). An implementation detail of the current marshal-ruby implementation — not the layer name.
@@ -33,7 +33,7 @@ Main-process entry points that receive UI requests and call the application core
 _Avoid_: transport layer, bridge, api routes (alone)
 
 **Driven adapters**:
-Implementations the application core calls for external I/O — **project data client** (+ implementations under `project-data/`), LLM providers (`ai-service-*`).
+Implementations the application core calls for external I/O — **GameDataStore** (+ implementations under `game-data/`), LLM providers (`ai-service-*`).
 _Avoid_: bridge, outbound services
 
 **Host API client**:
