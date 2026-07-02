@@ -174,9 +174,9 @@ Renderer bridge.ts → IPC (ipc-handlers) or HTTP (api-server :3001)
 
 **R1 target modules (implementation scope):** `handlers/config-handlers.ts`, `handlers/map-handlers.ts`, `handlers/ai-handlers.ts`, thin `handlers.ts` barrel; extract `map-test-generators.ts`, `tileset-asset-resolver.ts` from private helpers.
 
-**Still open (Session 2):** R9/R11 timing — folder restructure same PR as R2 or immediately after (recommend after R2).
+**Decided (R9/R11 timing):** Folder restructure **after R2/R10** — typed application port first, then mechanical moves (`host/`, `adapters/`, `host-api/`, `project-data-client`).
 
-**Status:** Session 2 in progress — core decisions recorded; one open item (R9 timing). Next: finish Session 2 or start Session 3.
+**Status:** Session 2 complete. Next: Session 3 — domain model & target executor (R3, R4).
 
 ---
 
@@ -249,9 +249,9 @@ Concrete work from validation — each row should cite which quality pillar it f
 | R6 | Reconcile MVP plan todos with AGENTS build order (Game Bible, prompts, executor) | Align | 6 | docs | Open |
 | R7 | Remove TS `patchMapDataBinary` fallback; Ruby-only RXData writes | Standard / fit | 1 | 1 PR | Open — decided Session 1 |
 | R8 | Unify Ruby-missing error messages across all `MapGenerator` spawn sites | Readable | 1 | 1 PR | Open — decided Session 1 |
-| R9 | Restructure: `main/host/`, `adapters/driving|driven/`, `project-data/implementations/`, split Host API | Readable / modular | 2 | 1–2 PRs | Open |
+| R9 | Restructure: `main/host/`, `adapters/driving|driven/`, `project-data/implementations/`, split Host API | Readable / modular | 2 | 1–2 PRs | Open — **after R2/R10** (Session 2) |
 | R10 | Typed application port; share contract between Host API transports and driving adapters (extends R2) | Standard / readable | 2 | with R2 | Open |
-| R11 | Rename `bridge.ts` → `host-api/`; `MapGenerator` → `project-data-client.ts` | Readable | 2 | with R9 | Open |
+| R11 | Rename `bridge.ts` → `host-api/`; `MapGenerator` → `project-data-client.ts` | Readable | 2 | with R9 | Open — **after R2/R10** (Session 2) |
 
 Add rows as sessions find gaps. Close with PR or ADR reference.
 
@@ -274,7 +274,7 @@ Add rows as sessions find gaps. Close with PR or ADR reference.
 |---|----------|--------|---------|
 | 1 | Split `handlers.ts` before or with executor PR? | **Resolved — before executor (R1 then R3)** | 2 |
 | 2 | Keep both IPC and Express long-term? | **Resolved — keep both** ([ADR 0002](./adr/0002-handlers-as-domain-core.md)) | 2 |
-| 2b | R9/R11 folder restructure same PR as R2 or after? | Open — recommend after R2/R10 | 2 |
+| 2b | R9/R11 folder restructure same PR as R2 or after? | **Resolved — after R2/R10** | 2 |
 | 3 | Executor: evolve `chat-map-pipeline` in place vs new `executor/` module? | Open | 3 |
 | 4 | Council-style review for orchestrator layout? | Open — default no | 3 |
 
