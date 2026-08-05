@@ -195,6 +195,45 @@ Renderer bridge.ts → IPC (ipc-handlers) or HTTP (api-server :3001)
 
 **Deliverables:** `CONTEXT.md` — *TownPlan*, *MapPatch*, *Executor*, *Game Bible*. Backlog: executor skeleton PR. Fix MVP plan sequencing only if validation proves it wrong.
 
+### Session 3 validation snapshot *(grill session 2026-08-04)*
+
+**AI pipeline intentions (why this shape):**
+
+1. **Token efficiency** — semantic ops + cached vocabulary; not full tile grids every turn.
+2. **Focused context** — orchestrator assembles bundle or agent pulls via read tools; compact map summary.
+3. **Scoped output + validation** — hybrid tool loop; executor validates; human approves each apply retry.
+
+**Decisions recorded:** [ADR 0004](./adr/0004-ai-pipeline-orchestrator-executor.md).
+
+| Topic | Decision |
+|-------|----------|
+| Context to specialist | **B** — orchestrator pre-assembles message + `selectedMapId` + map summary + TownPlan/bible excerpts; read tools on demand |
+| Tile vocabulary | **B** — per-tile semantics + curated entity templates in `.pgb/cache/` |
+| Passability | **C** — tile defaults + template cell overrides (doors, counters) |
+| Composer output | **A** — semantic ops (`stamp`, `clear`, `fill`, …), not raw tile IDs |
+| Executor v1 scope | **A** — patch selected map only; **A1** — block if no map selected |
+| Module placement | **A now** — `executor/` for R3; **C later** — orchestrator + prompts, retire `chat-map-pipeline` entry (R4) |
+| Cache build | **D** — lazy on first AI use + manual refresh from Tileset Inspector (mtime/hash) |
+| Map summary | **B** — metadata + semantic regions (scan vs vocabulary/templates) + events |
+| Routing | **Hybrid** — in-app tool loop (D2) + hard gates (A1, executor-only writes); MCP **deferred** post-MVP ([ADR 0004](./adr/0004-ai-pipeline-orchestrator-executor.md)) |
+| Apply failures | Structured errors; optional region read on agent request; max 3 retries; user approves each retry via inline chat card (Retry with optional message / Cancel) |
+| Create-map migration | **Provisional B** — keep legacy path until Phase 4 town generation; **revisit before that work** |
+
+**Status:** Session 3 complete. Next: Session 4 — file structure & doc ownership (or implement R1 → vocabulary cache → R3).
+
+### Session 3b — deferred (next grill)
+
+Topics raised after Session 3; **not decided** — dedicated grilling session before implementation.
+
+| # | Topic | Open questions |
+|---|--------|----------------|
+| 1 | **Chat history** | UI persist (`.pgb/sessions/`?) vs model context (sliding window + summary); one session per project vs named sessions |
+| 2 | **Validation layers** | Pre-apply vs pre-commit vs smoke; relationship to executor staging |
+| 3 | **Staging / save model** | All RXData writes temporary until Save; `.pgb/staging/` overlay; Exit without save / Discard; scope (AI only vs all game data vs bible too) |
+| 4 | **ADR 0004 amend** | If staging adopted: `apply_patch` → stage, not disk; explicit Save commits to `Data/` |
+
+**Entry prompt for next session:** paste Session 3 snapshot + this table + [ADR 0004](./adr/0004-ai-pipeline-orchestrator-executor.md).
+
 ---
 
 ## Session 4 — File structure & doc ownership
@@ -246,9 +285,11 @@ Concrete work from validation — each row should cite which quality pillar it f
 |----|------|--------|---------|-------|--------|
 | R1 | Split `handlers.ts` by domain (maps / ai / config); extract test-map + tileset-asset helpers | Modular / readable | 2 | 1–2 PRs | Open — **before R3** (Session 2) |
 | R2 | Typed bridge contract (replace string channels) | Standard / readable | 2 | 1 PR | Open |
-| R3 | Executor module skeleton + validator seam | Fit / modular | 3 | 1 PR | Open |
-| R4 | `docs/prompts/` with orchestrator PR | Align | 3 | with agent PR | Open |
-| R5 | ADR batch (0001–0003) | Align | 1–5 | docs | Done — [0001](./adr/0001-local-first-ruby-bridge.md), [0002](./adr/0002-handlers-as-domain-core.md), [0003](./adr/0003-typescript-style-by-layer.md) |
+| R3 | Executor module (`src/main/executor/`) — patch path: validate → resolve semantic ops → write; structured validation errors | Fit / modular | 3 | 1 PR | Open — **after R1**; patch selected map only ([ADR 0004](./adr/0004-ai-pipeline-orchestrator-executor.md)) |
+| R4 | Orchestrator + in-app tool registry + `docs/prompts/`; inline chat retry UX; retire `chat-map-pipeline` entry | Align / fit | 3 | 1–2 PRs | Open — **after R3** |
+| R5 | ADR batch (0001–0004) | Align | 1–5 | docs | Done — [0001](./adr/0001-local-first-ruby-bridge.md) … [0004](./adr/0004-ai-pipeline-orchestrator-executor.md) |
+| R12 | Pass `selectedMapId` from workbench to chat/AI path; block patch intents when null | Fit | 3 | with R3/R4 | Open |
+| R13 | Tile vocabulary cache (`.pgb/cache/`) — lazy build + Tileset Inspector refresh | Fit | 3 | with PR 2.1 / R3 | Open |
 | R6 | Reconcile MVP plan todos with AGENTS build order (Game Bible, prompts, executor) | Align | 6 | docs | Open |
 | R7 | Remove TS `patchMapDataBinary` fallback; Ruby-only RXData writes | Standard / fit | 1 | 1 PR | Open — decided Session 1 |
 | R8 | Unify Ruby-missing error messages across all `MapGenerator` spawn sites | Readable | 1 | 1 PR | Open — decided Session 1 |
@@ -266,10 +307,10 @@ Add rows as sessions find gaps. Close with PR or ADR reference.
 
 | # | Mismatch | Decide in |
 |---|----------|-----------|
-| D1 | Write path is AI → full map → disk; target is propose → executor → disk | Session 3 |
-| D2 | `docs/prompts/` and `docs/adr/` missing | Session 3–4 |
+| D1 | Write path is AI → full map → disk; target is propose → executor → disk | **Resolved Session 3** — patch path via semantic ops + executor ([ADR 0004](./adr/0004-ai-pipeline-orchestrator-executor.md)); create-map legacy until Phase 4 (provisional) |
+| D2 | `docs/prompts/` missing; `docs/adr/` thin | Session 4 — ADR 0004 added; prompts land with R4 |
 | D3 | MVP plan has no explicit PRs for Game Bible, `.pgb/`, executor skeleton (AGENTS.md does) | Session 6 |
-| D4 | “Orchestrator” in MVP plan (multi-map) vs AGENTS (route specialists) — same word? | Session 3 |
+| D4 | “Orchestrator” in MVP plan (multi-map) vs AGENTS (route specialists) — same word? | **Resolved Session 3** — in-app tool loop orchestrator ([ADR 0004](./adr/0004-ai-pipeline-orchestrator-executor.md)); MVP Phase 5.2 “map-orchestrator” = multi-map generation coordinator, rename or cross-link in Session 6 |
 
 **Architecture debates** *(not for Session 0)*
 
@@ -278,8 +319,9 @@ Add rows as sessions find gaps. Close with PR or ADR reference.
 | 1 | Split `handlers.ts` before or with executor PR? | **Resolved — before executor (R1 then R3)** | 2 |
 | 2 | Keep both IPC and Express long-term? | **Resolved — keep both** ([ADR 0002](./adr/0002-handlers-as-domain-core.md)) | 2 |
 | 2b | R9/R11 folder restructure same PR as R2 or after? | **Resolved — after R2/R10** | 2 |
-| 3 | Executor: evolve `chat-map-pipeline` in place vs new `executor/` module? | Open | 3 |
-| 4 | Council-style review for orchestrator layout? | Open — default no | 3 |
+| 3 | Executor: evolve `chat-map-pipeline` in place vs new `executor/` module? | **Resolved — new `executor/` for R3; full orchestrator + retire pipeline entry in R4** ([ADR 0004](./adr/0004-ai-pipeline-orchestrator-executor.md)) | 3 |
+| 4 | Council-style review for orchestrator layout? | **Resolved — no runtime council; hybrid tool loop; design-time council stays optional** ([ADR 0004](./adr/0004-ai-pipeline-orchestrator-executor.md)) | 3 |
+| 5 | MCP-exposed tools for external agents (Cursor driving app)? | **Resolved — defer post-MVP; in-app tool registry first** ([ADR 0004](./adr/0004-ai-pipeline-orchestrator-executor.md)) | 3 |
 
 ---
 

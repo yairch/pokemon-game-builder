@@ -65,11 +65,27 @@ Pinned structured plan for a town (exterior, interiors, NPC roles) produced by t
 _Avoid_: prompt, blueprint
 
 **MapPatch** (planned):
-Structured tile/event edit applied by the executor without replacing the whole map.
+Structured tile/event edit applied by the executor without replacing the whole map. Composer emits **semantic operations** (stamp, clear, fill, …) with vocabulary template keys — not raw tile ID grids.
 _Avoid_: diff, update object
 
+**Semantic operation** (planned):
+One step in a MapPatch — e.g. stamp a template at an origin, clear a region, fill terrain — expressed in vocabulary keys the executor resolves to tile IDs.
+_Avoid_: tile command, paint op
+
+**Map summary** (planned):
+Compact read-model for the selected map: metadata, event list, and **semantic regions** (pond, path, building footprints) derived from scanning layers against the tile vocabulary. Fed to the AI pipeline instead of raw grids.
+_Avoid_: map dump, layer export
+
+**Tile vocabulary cache** (planned):
+Preprocessed per-tileset semantics and entity templates under `.pgb/cache/`. Shared by specialists and executor; built lazily and refreshable when the tileset PNG changes.
+_Avoid_: tileset JSON, vision prompt
+
+**Tool registry** (planned):
+In-app tools the orchestrator agent calls (read map summary, get vocabulary, propose patch, apply patch). Only apply performs disk writes. MCP adapter may wrap the same registry post-MVP.
+_Avoid_: MCP server (as product name), plugin API
+
 **Executor** (planned):
-App module that validates patches, resolves tiles (incl. autotiles), and writes RXData — agents never write files directly.
+App module that validates patches, resolves semantic ops to tiles (incl. autotiles), and writes RXData — agents never write files directly.
 _Avoid_: pipeline, writer service
 
 **Game Bible** (planned):
