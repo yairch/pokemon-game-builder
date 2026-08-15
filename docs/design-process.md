@@ -221,18 +221,55 @@ Renderer bridge.ts → IPC (ipc-handlers) or HTTP (api-server :3001)
 
 **Status:** Session 3 complete. Next: Session 4 — file structure & doc ownership (or implement R1 → vocabulary cache → R3).
 
-### Session 3b — deferred (next grill)
+### Session 3b — deferred grill *(complete 2026-08-15)*
 
-Topics raised after Session 3; **not decided** — dedicated grilling session before implementation.
+Topics raised after Session 3; decide before staging-related implementation.
 
-| # | Topic | Open questions |
-|---|--------|----------------|
-| 1 | **Chat history** | UI persist (`.pgb/sessions/`?) vs model context (sliding window + summary); one session per project vs named sessions |
-| 2 | **Validation layers** | Pre-apply vs pre-commit vs smoke; relationship to executor staging |
-| 3 | **Staging / save model** | All RXData writes temporary until Save; `.pgb/staging/` overlay; Exit without save / Discard; scope (AI only vs all game data vs bible too) |
-| 4 | **ADR 0004 amend** | If staging adopted: `apply_patch` → stage, not disk; explicit Save commits to `Data/` |
+| # | Topic | Status |
+|---|--------|--------|
+| 1 | **Chat history** | **Done** |
+| 2 | **Validation layers** | **Done** |
+| 3 | **Staging / save model** | **Done** |
+| 4 | **ADR 0004 amend** | **Done** — no amend for MVP |
 
-**Entry prompt for next session:** paste Session 3 snapshot + this table + [ADR 0004](./adr/0004-ai-pipeline-orchestrator-executor.md).
+**Chat history (Topic 1 — decided 2026-08-05)**
+
+| Decision | Choice |
+|----------|--------|
+| MVP UI transcript | **Ephemeral** — in-memory only; no `.pgb/sessions/` yet |
+| Post-MVP target | Persisted history per project + **multiple named chat sessions** |
+| MVP model context | **Hybrid (C):** small in-memory sliding window (~6–10 messages) + **map summary + selectedMapId + TownPlan/bible every turn** |
+| Apply state | **Action log lite** — last apply result (success / structured errors) in orchestrator state, not full chat replay |
+| Rationale | Industry pattern: working memory + ground-truth re-read; prove pipeline + quality bar before session UX |
+
+**Validation layers (Topic 2 — decided 2026-08-15)**
+
+| Decision | Choice |
+|----------|--------|
+| Blocking gate | **Pre-apply validation only** — executor rejects illegal MapPatches; no write |
+| App QA | **On demand**, warnings only — warps, walkable NPCs, must-have checklist; does not block apply |
+| Smoke checklist | **Manual** — user runs Game.exe; not an automated gate |
+| Pre-commit | **N/A until Topic 3** — exists only if staging is adopted |
+| Rejected | App QA after every apply (B); block writes on App QA (C) |
+| Rationale | Prove patch path first; App QA is often cross-map and noisy while town quality is still being tuned |
+
+**Staging / save model (Topic 3 — decided 2026-08-15)**
+
+| Decision | Choice |
+|----------|--------|
+| MVP | **Write-through** — successful apply writes directly to `Data/`; preview and Game.exe see the same files |
+| Post-MVP | **Staging overlay** (GUI G3) — `.pgb/staging/`, Save / Discard, after pipeline meets quality bar |
+| Rejected for MVP | Staging overlay (B) — too much infra before patch path is proven |
+| Rationale | Same sequencing as ephemeral chat: prove write path first; preview is the cheap iteration loop |
+
+**ADR 0004 amend (Topic 4 — decided 2026-08-15)**
+
+| Decision | Choice |
+|----------|--------|
+| MVP | **No amend** — [ADR 0004](./adr/0004-ai-pipeline-orchestrator-executor.md) stands: `apply_patch` validates and writes RXData to the Essentials project |
+| When staging lands | Amend ADR 0004: `apply_patch` → stage; explicit Save commits to `Data/`; revisit in G3 design |
+
+**Status:** Session 3b complete. Next: **Session 4** — file structure & doc ownership (or implement **R1 → vocabulary cache → R3**).
 
 ---
 
