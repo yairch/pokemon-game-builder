@@ -96,6 +96,38 @@ _Avoid_: system prompt, lore doc
 In-app layout: map tree, canvas preview, chat, and tooling panels — iteration without RMXP.
 _Avoid_: editor, IDE
 
+**Chat transcript** (MVP):
+Messages shown in the workbench chat panel for the current app session only — not written to disk. Lost on refresh or project switch.
+_Avoid_: chat log, conversation history (when meaning persisted storage)
+
+**Chat session** (post-MVP):
+A named, persisted conversation thread under the opened Essentials project (e.g. in `.pgb/sessions/`). Multiple sessions per project; ultimate UX target after the AI pipeline meets quality bar.
+_Avoid_: chat tab, thread (alone)
+
+**Model context bundle** (MVP):
+What the orchestrator assembles each AI turn: current user message, a small in-memory sliding window of recent chat turns, fresh map summary + selected map, TownPlan/bible excerpts when present, and the last apply outcome. Ground-truth reads every turn; chat is intent, not authority.
+_Avoid_: prompt, full history dump
+
+**Action log** (MVP):
+Compact orchestrator state for the most recent patch apply — success or structured validation errors — so retries and follow-ups do not depend on replaying full chat.
+_Avoid_: tool trace, conversation memory
+
+**Pre-apply validation**:
+The executor's blocking check that a MapPatch is legal to apply on the selected map (bounds, known templates, resolvable semantic ops). Failure means no write.
+_Avoid_: lint, schema check, validator (alone)
+
+**App QA**:
+On-demand structural and must-have checks after a write (warps, walkable NPCs, plan/bible checklist). Warnings for MVP — does not block apply.
+_Avoid_: e2e, QA script, validation layer (when meaning the whole stack)
+
 **Smoke checklist**:
 Manual Essentials playtest steps (walk map, enter building, talk to NPC) proving MVP playability.
 _Avoid_: e2e test, QA script
+
+**Write-through apply** (MVP):
+Successful executor apply writes RXData directly into the opened Essentials project. Preview and Game.exe read the same on-disk files; no draft layer or Save step.
+_Avoid_: auto-save, direct write (alone)
+
+**Staging overlay** (post-MVP):
+Draft map writes under `.pgb/staging/` with explicit Save to commit into `Data/` and Discard to drop drafts. Target for GUI roadmap G3 after the AI pipeline meets quality bar.
+_Avoid_: temp files, unsaved buffer
