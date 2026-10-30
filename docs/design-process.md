@@ -269,11 +269,66 @@ Topics raised after Session 3; decide before staging-related implementation.
 | MVP | **No amend** — [ADR 0004](./adr/0004-ai-pipeline-orchestrator-executor.md) stands: `apply_patch` validates and writes RXData to the Essentials project |
 | When staging lands | Amend ADR 0004: `apply_patch` → stage; explicit Save commits to `Data/`; revisit in G3 design |
 
-**Status:** Session 3b complete. Next: **Session 4** — file structure & doc ownership (or implement **R1 → vocabulary cache → R3**).
+**Status:** Session 3b complete. Next: **Session 3c** — showcase MVP, measurement, LLM port, distribution.
+
+### Session 3c — Showcase MVP, measurement, LLM port, distribution *(opened 2026-10-29)*
+
+Gaps found when reviewing the design against the portfolio goal: the design covered fullstack seams and the AI pipeline shape, but not **how AI quality is measured**, **how the model is called for a tool loop**, **what a patch looks like on the wire**, or **how the app ships without third-party assets**. VISION updated with M1/M2/M3, [Measurement](./VISION.md#measurement), and [Distribution & third-party assets](./VISION.md#distribution--third-party-assets).
+
+| # | Topic | Status |
+|---|--------|--------|
+| 1 | **MVP reframe** | **Decided (principle)** — M1 Showcase MVP / M2 starter town / M3 installable release; M1 scope details confirmed in grill |
+| 2 | **Measurement from the start** | **Decided** — turn traces + eval suite in M1, before the new pipeline; baseline the legacy pipeline |
+| 3 | **LLM port** | **Decided (A)** — [ADR 0005](./adr/0005-provider-neutral-llm-port.md): own port over official SDKs; Claude adapter only; no multi-provider framework for M1 |
+| 4 | **Patch schemas** | **Open** — sketch before R3; owned by the R3 PR |
+| 5 | **Distribution & assets** | **Decided (principle)** — never bundle third-party assets; synthetic fixtures; BYOK. Open for M3: Ruby runtime bundling, installer tooling, public name |
+| 6 | **Shared autotile module** | **Proposed** — one pure module in `src/shared/` used by preview (G1) and executor |
+| 7 | **Vocabulary approach** | **Investigation** — time-boxed spike (R19): vision vs map-mined vs curated; label granularity; autotile labels; cost per tileset |
+
+**LLM port (Topic 3)**
+
+Today `IAIService.chat(message, context) → any` is one-shot text: the adapter builds its own prompt, parses a full `mapData` out of the reply, and returns `any`. ADR 0004's tool loop needs more from the model call: system prompt + message history, **tool definitions**, the model's **tool calls** (name + JSON args) back, tool results fed in on the next call, and **token usage** per call for traces. Default model ids in the adapters are also stale.
+
+| Option | Shape | Trade-off |
+|--------|-------|-----------|
+| **A (chosen)** | Provider-neutral port (`complete({ system, messages, tools }) → { content, toolCalls, usage, stopReason }`); **Claude adapter only** for the tool loop in M1. Gemini stays on the legacy chat path until R4 retires it, then ported or dropped | Clean seam, interview-explainable, one adapter to debug; Gemini parity deferred |
+| B | Same port, Claude + Gemini adapters both in M1 | Proves the port is real; doubles tool-calling edge cases and eval runs |
+| C | Third-party LLM abstraction library behind the port | Less code; extra dependency and less to show; still need own trace/usage shape |
+
+Orchestrator loop, tool registry, and prompts live in the application core — never in adapters ([ADR 0003](./adr/0003-typescript-style-by-layer.md)). Model ids become config with current defaults; which model per specialist is decided by eval results.
+
+**Patch schemas (Topic 4)** — illustrative, not final:
+
+```json
+{
+  "mapId": 3,
+  "ops": [
+    { "op": "fill",  "terrain": "water", "region": { "x": 14, "y": 2, "w": 5, "h": 4 } },
+    { "op": "stamp", "template": "tree_small", "at": { "x": 13, "y": 1 } },
+    { "op": "clear", "layer": 2, "region": { "x": 8, "y": 10, "w": 2, "h": 2 } }
+  ]
+}
+```
+
+```json
+{
+  "mapId": 3,
+  "events": [
+    { "op": "add_npc", "at": { "x": 10, "y": 7 }, "charset": "NPC 01",
+      "faceOnInteract": true, "dialogue": ["Hi there!", "The pond is new."] }
+  ]
+}
+```
+
+Decide in R3: op list and fields, region vs polygon, layer selection (explicit vs template-implied), validation error shape (`{ opIndex, code, message, cells? }`), and the JSON Schema used for tool definitions + executor validation (single source).
+
+**Status:** Session 3c open — grill Topics 1 (M1 scope details), 4; then **Session 6**.
 
 ---
 
 ## Session 4 — File structure & doc ownership
+
+> **Folded into Session 6** (2026-10-29) — doc ownership and README alignment happen with the plan rewrite.
 
 **Goal:** Repo structure supports next PRs; docs teach the design; portfolio reader isn’t misled.
 
@@ -288,6 +343,8 @@ Topics raised after Session 3; decide before staging-related implementation.
 ---
 
 ## Session 5 — Scale boundaries (local vs remote)
+
+> **Reduced** (2026-10-29) — one short ADR (remote = new adapter at the seam, not a domain move); not blocking M1.
 
 **Goal:** Local-first design extends without rewriting domain; no premature cloud complexity.
 
@@ -309,6 +366,8 @@ Topics raised after Session 3; decide before staging-related implementation.
 - `docs/architecture/overview.html` matches post-refactor structure.
 - `CONTEXT.md` complete for current + next milestone terms.
 - ADRs indexed; no stale claims in README.
+- MVP plan todos rewritten as **M1 / M2 / M3** milestones (VISION build order); stale phases fixed — tool-calling is foundational (ADR 0004), validation split into pre-apply + App QA, “enhanced prompts” → `docs/prompts/` + orchestrator.
+- Session 4 scope (doc ownership, README) included.
 
 **Deliverables:** Updated plans if needed; close or reprioritize Open decisions log; mark refactor items done or scheduled.
 
@@ -324,7 +383,7 @@ Concrete work from validation — each row should cite which quality pillar it f
 | R2 | Typed bridge contract (replace string channels) | Standard / readable | 2 | 1 PR | Open |
 | R3 | Executor module (`src/main/executor/`) — patch path: validate → resolve semantic ops → write; structured validation errors | Fit / modular | 3 | 1 PR | Open — **after R1**; patch selected map only ([ADR 0004](./adr/0004-ai-pipeline-orchestrator-executor.md)) |
 | R4 | Orchestrator + in-app tool registry + `docs/prompts/`; inline chat retry UX; retire `chat-map-pipeline` entry | Align / fit | 3 | 1–2 PRs | Open — **after R3** |
-| R5 | ADR batch (0001–0004) | Align | 1–5 | docs | Done — [0001](./adr/0001-local-first-ruby-bridge.md) … [0004](./adr/0004-ai-pipeline-orchestrator-executor.md) |
+| R5 | ADR batch (0001–0005) | Align | 1–5 | docs | Done — [0001](./adr/0001-local-first-ruby-bridge.md) … [0005](./adr/0005-provider-neutral-llm-port.md) |
 | R12 | Pass `selectedMapId` from workbench to chat/AI path; block patch intents when null | Fit | 3 | with R3/R4 | Open |
 | R13 | Tile vocabulary cache (`.pgb/cache/`) — lazy build + Tileset Inspector refresh | Fit | 3 | with PR 2.1 / R3 | Open |
 | R6 | Reconcile MVP plan todos with AGENTS build order (Game Bible, prompts, executor) | Align | 6 | docs | Open |
@@ -333,6 +392,15 @@ Concrete work from validation — each row should cite which quality pillar it f
 | R9 | Restructure: `main/host/`, `adapters/driving|driven/`, `game-data/implementations/`, split Host API | Readable / modular | 2 | 1–2 PRs | Open — **after R2/R10** (Session 2) |
 | R10 | Typed application port; share contract between Host API transports and driving adapters (extends R2) | Standard / readable | 2 | with R2 | Open |
 | R11 | Rename `bridge.ts` → `host-api/`; `MapGenerator` → `GameDataStore` (`game-data-store.ts`) | Readable | 2 | with R9 | Open — **after R2/R10** (Session 2) |
+| R14 | Eval harness — golden cases on fixture project; deterministic checks; replay + live modes; dated report | Fit / standard | 3c | 1–2 PRs | Open — M1, **before R3** (baseline legacy pipeline) |
+| R15 | Turn traces — JSONL under `.pgb/traces/` (model, prompt version, tool calls, tokens, cost, latency, attempts) | Fit / standard | 3c | 1 PR | Open — M1, with R16 |
+| R16 | Provider-neutral LLM port (messages, tools, tool calls, usage); Claude adapter; model ids as config with current defaults | Modular / fit | 3c | 1 PR | Open — M1, with R15 ([ADR 0005](./adr/0005-provider-neutral-llm-port.md)) |
+| R17 | CI — GitHub Actions: typecheck, unit tests, eval replay (Ruby available) | Standard | 3c | 1 PR | Open — M1 foundation |
+| R18 | Shared neighbor-aware autotile module in `src/shared/` (water first) — used by preview G1 and executor | Modular | 3c | 1 PR | Open — M1, with R3 |
+| R19 | Vocabulary spike — compare vision / map-mined / curated on one tileset; pick approach for R13 | Fit | 3c | time-boxed spike | Open — M1, before R13 |
+| R20 | Synthetic fixture project — original small tileset PNG + generated RXData; no third-party assets | Standard / fit | 3c | 1 PR | Open — M1, before R14 |
+| R21 | API key handling — remove compiled `constants.ts` keys; env/config now, OS-protected storage in M3 | Standard | 3c | 1 PR | Open — before any packaged build |
+| R22 | Packaging — installer, Ruby runtime (bundle vs detect), first-run Essentials setup | Fit | 3c | 2+ PRs | Open — M3 |
 
 Add rows as sessions find gaps. Close with PR or ADR reference.
 
@@ -359,6 +427,10 @@ Add rows as sessions find gaps. Close with PR or ADR reference.
 | 3 | Executor: evolve `chat-map-pipeline` in place vs new `executor/` module? | **Resolved — new `executor/` for R3; full orchestrator + retire pipeline entry in R4** ([ADR 0004](./adr/0004-ai-pipeline-orchestrator-executor.md)) | 3 |
 | 4 | Council-style review for orchestrator layout? | **Resolved — no runtime council; hybrid tool loop; design-time council stays optional** ([ADR 0004](./adr/0004-ai-pipeline-orchestrator-executor.md)) | 3 |
 | 5 | MCP-exposed tools for external agents (Cursor driving app)? | **Resolved — defer post-MVP; in-app tool registry first** ([ADR 0004](./adr/0004-ai-pipeline-orchestrator-executor.md)) | 3 |
+| 6 | LLM port shape and provider parity for the tool loop (A / B / C)? | **Resolved — A** ([ADR 0005](./adr/0005-provider-neutral-llm-port.md)) | 3c |
+| 7 | Semantic op + EventPatch schema (fields, error shape, single JSON Schema source)? | Open — sketch in 3c, finalize in R3 | 3c |
+| 8 | Ruby runtime for installs: bundle portable Ruby vs require user install? | Open — M3 | 3c |
+| 9 | Public product name (trademark-sensitive “Pokemon”)? | Open — before M3 | 3c |
 
 ---
 

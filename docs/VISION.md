@@ -22,7 +22,9 @@ The app sits on **RPG Maker XP + Pokémon Essentials**: it reads and writes real
 
 
 
-**Primary motivation:** fun and creative expression. Monetization, asset licensing, and trademark policy are **post-MVP** concerns.
+**Primary motivation:** fun and creative expression. Monetization and trademark policy are **post-MVP** concerns; asset redistribution rules apply from day one (see [Distribution & third-party assets](#distribution--third-party-assets)).
+
+**Engineering goal:** the project doubles as a **fullstack + AI engineering showcase**. Milestones are cut to deliver a working, measured proof of concept fast — then deepen. Every AI claim should be backed by a number (see [Measurement](#measurement)).
 
 
 
@@ -88,7 +90,7 @@ Real user flows will vary; the example below is **illustrative**, not a fixed sc
 
 
 
-**Gap vs vision:** tileset vision and vocabulary cache, specialist orchestrator, neighbor-aware terrain, events at quality bar, Game Bible, validation workflow, template seed UX.
+**Gap vs vision:** tileset vision and vocabulary cache, specialist orchestrator, neighbor-aware terrain, events at quality bar, Game Bible, validation workflow, template seed UX, **eval suite + turn traces**, **CI**, **synthetic fixture project**, **installable build**.
 
 
 
@@ -106,7 +108,9 @@ Real user flows will vary; the example below is **illustrative**, not a fixed sc
 
 - **Scenery (MVP):** must-have checklist from plan/bible **plus** user preview and chat patches — not a fixed genre template.
 
-- **Later:** experiment with automated intent review (plan vs result) if it improves trust.
+- **Measured:** intent and patch consistency are scored by deterministic eval checks, not only eyeballed (see [Measurement](#measurement)).
+
+- **Later:** experiment with LLM-as-judge intent review (plan vs result) if deterministic checks miss real failures.
 
 
 
@@ -118,15 +122,33 @@ Real user flows will vary; the example below is **illustrative**, not a fixed sc
 
 
 
-### First AI milestone (map POC)
+Three milestones, each shippable on its own. **M1 is the MVP** — the smallest slice that proves the AI pipeline end to end, with numbers.
 
+| Milestone | Proves | Outcome |
+|-----------|--------|---------|
+| **M1 — Showcase MVP** | AI pipeline works and is measured | Patch an existing map from chat; demo video + eval report |
+| **M2 — Playable starter town** | Pipeline scales to multi-map content | Former “Full MVP” below |
+| **M3 — Installable release** | Anyone can install and use it | Installer, first-run setup, BYOK keys |
 
+### M1 — Showcase MVP (proof of concept)
 
-A user prompt produces a **tileset-aware, layer-correct map** in the project, with **patch-first** chat edits. Requires vision → vocabulary cache, specialist prompts, and orchestrator.
+**Flow:** open an Essentials project → select an existing map → chat *“add a pond in the northeast with trees around it, and an NPC by the path who says hello”* → orchestrator + specialists propose a semantic patch → executor validates, resolves vocabulary and water autotiles, writes → preview refreshes → *“move the pond west”* changes only the pond.
 
+| Area | M1 scope |
+|------|----------|
+| **Tile vocabulary** | One outdoor tileset; cached in `.pgb/cache/` (approach chosen by time-boxed spike) |
+| **Executor** | Patch selected map only ([ADR 0004](./adr/0004-ai-pipeline-orchestrator-executor.md)); semantic ops; neighbor-aware autotiles for **water** (one shared module with preview G1) |
+| **Agents** | Orchestrator tool loop + map composer + event writer lite; prompts in `docs/prompts/` |
+| **Events lite** | NPC with stock charset, multi-line Show Text, turn toward player. Signs optional; warps → M2 |
+| **Measurement** | Turn traces + eval suite (replay in CI, live on demand); baseline the legacy pipeline first |
+| **Engineering** | CI (typecheck, unit, eval replay); synthetic fixture project; current model config |
+| **Showcase** | README with demo video/GIF, architecture, and eval results |
 
+**Not in M1:** create-map via new pipeline, interiors, warps, Game Bible, template seed UX, staging overlay, installer.
 
-### Full MVP (release bar)
+**Exit criteria:** CI green; eval report committed with baseline vs pipeline numbers; demo recorded on a real local Essentials install; in Game.exe the edited map loads, pond edges render, NPC talks and faces the player.
+
+### M2 — Playable starter town (former Full MVP)
 
 
 
@@ -210,23 +232,22 @@ Version snapshots under `.pgb/history/`. Multi-doc gameplay guide post-MVP.
 
 
 
-Engineering order (subject to change when the implementation plan is updated):
+Engineering order (subject to change when the implementation plan is updated in design Session 6):
 
+**M1 — Showcase MVP**
 
+1. **Foundation** — handler split, Ruby-only writes, CI.  
+2. **LLM port + turn traces** — measure from the first AI call.  
+3. **Fixture project + eval harness** — baseline the legacy pipeline before replacing it.  
+4. **Vocabulary spike → vocabulary cache** — one tileset.  
+5. **Executor + shared water autotiles** — preview G1 uses the same module.  
+6. **Orchestrator + `docs/prompts/`** — tool loop, selected-map gate, retry cards.  
+7. **Events lite** — NPC dialogue + face-on-interact.  
+8. **Showcase** — eval report, demo video, README.
 
-1. **Tileset vision → vocabulary cache** — give AI correct visual/context grounding for map POC.  
+**M2 — Playable starter town:** town planning + create-map migration, interiors + warps, full neighbor-aware terrain, App QA + must-have checklist, Game Bible, template seed UX.
 
-2. **`docs/prompts/` + orchestrator** — specialist prompts and routing.  
-
-3. **Game Bible + `.pgb/`** — richer context for story-driven flows (after map POC works from prompt alone).  
-
-4. **Events** — NPC presence, warps, face-on-interact.  
-
-5. **Neighbor-aware autotile executor** — phased; MVP-complete before full MVP sign-off.  
-
-6. **Validation + must-have checklist** (with bible/plan when available).  
-
-7. **Template seed UX** — golden template from user's Essentials.  
+**M3 — Installable release:** packaging, Ruby runtime, first-run setup, key storage, naming review.
 
 
 
@@ -234,7 +255,7 @@ Engineering order (subject to change when the implementation plan is updated):
 
 
 
-### Explicitly not MVP
+### Explicitly out of scope (M1–M3)
 
 
 
@@ -298,6 +319,21 @@ Connected **mini-region** — starter town plus routes and/or extra maps, map co
 
 
 
+### Distribution & third-party assets
+
+
+
+RPG Maker XP (and its RTP), Pokémon Essentials, and Pokémon graphics/names are **third-party copyrighted works and trademarks**; their owners set the terms. This is a **legal** constraint, not a technical one. *(Not legal advice — review before public release.)*
+
+- **The app is a tool, not a content pack.** It operates on the user's own Essentials install and never bundles, uploads, or redistributes third-party assets — not in the repo, installer, test fixtures, or downloadable demos.
+- **Fixtures are ours.** CI and evals run on a **synthetic fixture project**: a small original tileset PNG plus generated RXData, committed to the repo.
+- **Demos are recordings.** Showcase uses video/screenshots of the author's local install; no downloadable sample game with third-party assets.
+- **Vision uploads.** Tileset images sent for vocabulary labeling go to the user's chosen LLM provider under the user's API key; the UI says so before the first upload.
+- **Keys are BYOK.** API keys live in OS-protected storage (M3), never compiled into the build.
+- **Naming.** “Pokemon” in the product name is trademark-sensitive; decide a public name before M3.
+
+
+
 ### `.pgb/` layout
 
 
@@ -349,6 +385,28 @@ Connected **mini-region** — starter town plus routes and/or extra maps, map co
 
 
 **Prompt engineering:** intent fidelity and token efficiency — see [`AGENTS.md`](../AGENTS.md) § Prompt engineering.
+
+
+
+**LLM port:** specialists talk to a provider-neutral model port (messages, tool definitions, tool calls, token usage); provider adapters sit behind it. Model ids are configuration, chosen by eval results.
+
+
+
+---
+
+
+
+## Measurement
+
+
+
+Evals and traces ship **in M1, before the new pipeline**, so improvements are shown against a baseline.
+
+- **Turn trace** — per AI turn: model, prompt versions, tool calls, tokens (incl. cached), cost, latency, apply attempts, validation errors, cells changed. Local JSONL under `.pgb/traces/`; nothing leaves the machine except the LLM calls themselves.
+- **Eval suite** — golden cases on the fixture project: starting map + prompt(s) + deterministic checks (patch valid, requested terrain present in requested region, no changes outside it, events on walkable tiles).
+- **Two modes** — **replay** (recorded model responses; deterministic; runs in CI) and **live** (real model; on demand; produces a dated report).
+- **Headline metrics** — first-attempt validity rate, success within 3 attempts, intent-check pass rate, patch locality, tokens / cost / latency per turn (p50 / p95).
+- **Prompt versioning** — prompts in `docs/prompts/` carry a version; traces and reports reference it so prompt changes are compared, not guessed.
 
 
 
@@ -451,5 +509,7 @@ Workbench-first: preview, tree, chat. **G1 autotile preview parity** parallels n
 | 2026-05-22 | Glossary; prompt engineering cross-ref |
 
 | 2026-05-22 | Quality bar, phased MVP, build order, events, autotiles, gameplayNotes, deferred items |
+
+| 2026-10-29 | Engineering goal; M1 Showcase MVP / M2 starter town / M3 installable release; Measurement; Distribution & third-party assets; LLM port |
 
 
