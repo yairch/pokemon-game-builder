@@ -279,7 +279,7 @@ Gaps found when reviewing the design against the portfolio goal: the design cove
 |---|--------|--------|
 | 1 | **MVP reframe** | **Decided (principle)** — M1 Showcase MVP / M2 starter town / M3 installable release; M1 scope details confirmed in grill |
 | 2 | **Measurement from the start** | **Decided** — turn traces + eval suite in M1, before the new pipeline; baseline the legacy pipeline |
-| 3 | **LLM port** | **Open** — recommendation A below |
+| 3 | **LLM port** | **Decided (A)** — [ADR 0005](./adr/0005-provider-neutral-llm-port.md): own port over official SDKs; Claude adapter only; no multi-provider framework for M1 |
 | 4 | **Patch schemas** | **Open** — sketch before R3; owned by the R3 PR |
 | 5 | **Distribution & assets** | **Decided (principle)** — never bundle third-party assets; synthetic fixtures; BYOK. Open for M3: Ruby runtime bundling, installer tooling, public name |
 | 6 | **Shared autotile module** | **Proposed** — one pure module in `src/shared/` used by preview (G1) and executor |
@@ -291,7 +291,7 @@ Today `IAIService.chat(message, context) → any` is one-shot text: the adapter 
 
 | Option | Shape | Trade-off |
 |--------|-------|-----------|
-| **A (recommended)** | Provider-neutral port (`complete({ system, messages, tools }) → { content, toolCalls, usage, stopReason }`); **Claude adapter only** for the tool loop in M1. Gemini stays on the legacy chat path until R4 retires it, then ported or dropped | Clean seam, interview-explainable, one adapter to debug; Gemini parity deferred |
+| **A (chosen)** | Provider-neutral port (`complete({ system, messages, tools }) → { content, toolCalls, usage, stopReason }`); **Claude adapter only** for the tool loop in M1. Gemini stays on the legacy chat path until R4 retires it, then ported or dropped | Clean seam, interview-explainable, one adapter to debug; Gemini parity deferred |
 | B | Same port, Claude + Gemini adapters both in M1 | Proves the port is real; doubles tool-calling edge cases and eval runs |
 | C | Third-party LLM abstraction library behind the port | Less code; extra dependency and less to show; still need own trace/usage shape |
 
@@ -322,7 +322,7 @@ Orchestrator loop, tool registry, and prompts live in the application core — n
 
 Decide in R3: op list and fields, region vs polygon, layer selection (explicit vs template-implied), validation error shape (`{ opIndex, code, message, cells? }`), and the JSON Schema used for tool definitions + executor validation (single source).
 
-**Status:** Session 3c open — grill Topics 1 (M1 scope details), 3, 4; then **Session 6**.
+**Status:** Session 3c open — grill Topics 1 (M1 scope details), 4; then **Session 6**.
 
 ---
 
@@ -383,7 +383,7 @@ Concrete work from validation — each row should cite which quality pillar it f
 | R2 | Typed bridge contract (replace string channels) | Standard / readable | 2 | 1 PR | Open |
 | R3 | Executor module (`src/main/executor/`) — patch path: validate → resolve semantic ops → write; structured validation errors | Fit / modular | 3 | 1 PR | Open — **after R1**; patch selected map only ([ADR 0004](./adr/0004-ai-pipeline-orchestrator-executor.md)) |
 | R4 | Orchestrator + in-app tool registry + `docs/prompts/`; inline chat retry UX; retire `chat-map-pipeline` entry | Align / fit | 3 | 1–2 PRs | Open — **after R3** |
-| R5 | ADR batch (0001–0004) | Align | 1–5 | docs | Done — [0001](./adr/0001-local-first-ruby-bridge.md) … [0004](./adr/0004-ai-pipeline-orchestrator-executor.md) |
+| R5 | ADR batch (0001–0005) | Align | 1–5 | docs | Done — [0001](./adr/0001-local-first-ruby-bridge.md) … [0005](./adr/0005-provider-neutral-llm-port.md) |
 | R12 | Pass `selectedMapId` from workbench to chat/AI path; block patch intents when null | Fit | 3 | with R3/R4 | Open |
 | R13 | Tile vocabulary cache (`.pgb/cache/`) — lazy build + Tileset Inspector refresh | Fit | 3 | with PR 2.1 / R3 | Open |
 | R6 | Reconcile MVP plan todos with AGENTS build order (Game Bible, prompts, executor) | Align | 6 | docs | Open |
@@ -394,7 +394,7 @@ Concrete work from validation — each row should cite which quality pillar it f
 | R11 | Rename `bridge.ts` → `host-api/`; `MapGenerator` → `GameDataStore` (`game-data-store.ts`) | Readable | 2 | with R9 | Open — **after R2/R10** (Session 2) |
 | R14 | Eval harness — golden cases on fixture project; deterministic checks; replay + live modes; dated report | Fit / standard | 3c | 1–2 PRs | Open — M1, **before R3** (baseline legacy pipeline) |
 | R15 | Turn traces — JSONL under `.pgb/traces/` (model, prompt version, tool calls, tokens, cost, latency, attempts) | Fit / standard | 3c | 1 PR | Open — M1, with R16 |
-| R16 | Provider-neutral LLM port (messages, tools, tool calls, usage); Claude adapter; model ids as config with current defaults | Modular / fit | 3c | 1 PR | Open — pending Topic 3 decision |
+| R16 | Provider-neutral LLM port (messages, tools, tool calls, usage); Claude adapter; model ids as config with current defaults | Modular / fit | 3c | 1 PR | Open — M1, with R15 ([ADR 0005](./adr/0005-provider-neutral-llm-port.md)) |
 | R17 | CI — GitHub Actions: typecheck, unit tests, eval replay (Ruby available) | Standard | 3c | 1 PR | Open — M1 foundation |
 | R18 | Shared neighbor-aware autotile module in `src/shared/` (water first) — used by preview G1 and executor | Modular | 3c | 1 PR | Open — M1, with R3 |
 | R19 | Vocabulary spike — compare vision / map-mined / curated on one tileset; pick approach for R13 | Fit | 3c | time-boxed spike | Open — M1, before R13 |
@@ -427,7 +427,7 @@ Add rows as sessions find gaps. Close with PR or ADR reference.
 | 3 | Executor: evolve `chat-map-pipeline` in place vs new `executor/` module? | **Resolved — new `executor/` for R3; full orchestrator + retire pipeline entry in R4** ([ADR 0004](./adr/0004-ai-pipeline-orchestrator-executor.md)) | 3 |
 | 4 | Council-style review for orchestrator layout? | **Resolved — no runtime council; hybrid tool loop; design-time council stays optional** ([ADR 0004](./adr/0004-ai-pipeline-orchestrator-executor.md)) | 3 |
 | 5 | MCP-exposed tools for external agents (Cursor driving app)? | **Resolved — defer post-MVP; in-app tool registry first** ([ADR 0004](./adr/0004-ai-pipeline-orchestrator-executor.md)) | 3 |
-| 6 | LLM port shape and provider parity for the tool loop (A / B / C)? | Open — recommendation A | 3c |
+| 6 | LLM port shape and provider parity for the tool loop (A / B / C)? | **Resolved — A** ([ADR 0005](./adr/0005-provider-neutral-llm-port.md)) | 3c |
 | 7 | Semantic op + EventPatch schema (fields, error shape, single JSON Schema source)? | Open — sketch in 3c, finalize in R3 | 3c |
 | 8 | Ruby runtime for installs: bundle portable Ruby vs require user install? | Open — M3 | 3c |
 | 9 | Public product name (trademark-sensitive “Pokemon”)? | Open — before M3 | 3c |
