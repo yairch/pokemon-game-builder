@@ -128,6 +128,22 @@ _Avoid_: e2e test, QA script
 Successful executor apply writes RXData directly into the opened Essentials project. Preview and Game.exe read the same on-disk files; no draft layer or Save step.
 _Avoid_: auto-save, direct write (alone)
 
+**Turn trace** (planned):
+Local record of one AI turn — model, prompt versions, tool calls, token usage, cost, latency, apply attempts, validation errors. Stored under `.pgb/traces/`.
+_Avoid_: log, telemetry (implies remote collection)
+
+**Eval suite** (planned):
+Golden cases (starting map + prompt + deterministic checks) run against the pipeline in **replay** mode (recorded model responses, CI) or **live** mode (real model, on demand).
+_Avoid_: tests (alone), benchmark
+
+**Fixture project** (planned):
+Synthetic Essentials-shaped project committed to the repo — original tileset and generated RXData — used by CI and evals. Contains no third-party assets.
+_Avoid_: sample game, test template
+
+**LLM port** (planned):
+Provider-neutral interface the application core uses to call a model: messages, tool definitions, tool calls, token usage. Provider adapters implement it.
+_Avoid_: AI service (legacy one-shot chat), SDK
+
 **Staging overlay** (post-MVP):
 Draft map writes under `.pgb/staging/` with explicit Save to commit into `Data/` and Discard to drop drafts. Target for GUI roadmap G3 after the AI pipeline meets quality bar.
 _Avoid_: temp files, unsaved buffer

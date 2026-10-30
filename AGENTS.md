@@ -8,9 +8,11 @@ Read **[`docs/VISION.md`](docs/VISION.md)** first. This file covers build-time d
 
 AI-first Essentials companion: chat-driven maps and events on disk, with in-app preview and map tree for iteration without RMXP.
 
-**Map POC:** user prompt → tileset-aware, layer-correct map with patch-first edits.
+**M1 — Showcase MVP:** chat patches an existing map (vocabulary-aware terrain, water autotiles, NPC dialogue + face-on-interact) via orchestrator + executor, with turn traces, eval suite, CI, and a recorded demo.
 
-**Full MVP:** playable starter town (exterior + 4 interiors), neighbor-aware autotiles, events (warps, NPC dialogue, face-on-interact), validation, smoke checklist.
+**M2 — Playable starter town:** exterior + 4 interiors, warps, full neighbor-aware autotiles, App QA, Game Bible, template seed.
+
+**M3 — Installable release:** installer, Ruby runtime, first-run setup, BYOK key storage.
 
 **v1.1:** mini-region with connected maps.
 
@@ -22,25 +24,29 @@ AI-first Essentials companion: chat-driven maps and events on disk, with in-app 
 2. In-app debug loop over RMXP  
 3. Patch-first iteration; regen only on explicit start over  
 4. Programmatic execution over LLM file writes  
-5. Automated tile vocabulary over hand-labeled IDs  
-6. User intent and patch consistency over generic “genre” heuristics  
-7. Small testable PRs per engineering plan  
+5. Measured AI quality — traces and evals before claims  
+6. Automated tile vocabulary over hand-labeled IDs  
+7. User intent and patch consistency over generic “genre” heuristics  
+8. Small testable PRs per engineering plan  
 
 ---
 
 ## Suggested build order
 
-Align new work with VISION until the implementation plan is updated:
+Align new work with VISION § Suggested build order until the implementation plan is updated. **M1:**
 
-1. Tileset vision → vocabulary cache  
-2. `docs/prompts/` + orchestrator  
-3. Game Bible + `.pgb/`  
-4. Phase 3 events (NPC presence, face-on-interact)  
-5. Neighbor-aware autotile executor (phased; MVP-complete)  
-6. Validation + must-have checklist  
-7. Template seed UX  
+1. Foundation — handler split, Ruby-only writes, CI  
+2. LLM port + turn traces  
+3. Fixture project + eval harness (baseline legacy pipeline)  
+4. Vocabulary spike → vocabulary cache  
+5. Executor + shared water autotiles  
+6. Orchestrator + `docs/prompts/`  
+7. Events lite (NPC dialogue, face-on-interact)  
+8. Showcase — eval report, demo video, README  
 
-**Post-MVP:** richer NPC systems, intent review automation, full gameplay doc, tutorials, legal principles, mod-aware AI.
+**M2:** town planning, interiors + warps, full autotiles, App QA, Game Bible, template seed UX. **M3:** packaging and install.
+
+**Post-MVP:** richer NPC systems, LLM-as-judge intent review, full gameplay doc, tutorials, legal principles, mod-aware AI.
 
 ---
 
@@ -126,6 +132,8 @@ G0, GW, GW+ done. **G1 autotile preview parity** can parallel neighbor-aware exe
 
 - Unit tests for patches, validation, autotile filler, vocabulary helpers.  
 - Integration tests for bridge and pipelines.  
+- Evals on the synthetic fixture project: replay mode in CI, live mode on demand (VISION § Measurement). Prompt changes cite eval results.  
+- Never commit third-party assets (RMXP, Essentials, Pokémon) — fixtures are original.  
 - “Playable” claims require smoke checklist in VISION.md.
 
 ---
