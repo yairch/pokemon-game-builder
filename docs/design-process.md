@@ -399,8 +399,9 @@ Concrete work from validation — each row should cite which quality pillar it f
 | R18 | Shared neighbor-aware autotile module in `src/shared/` (water first) — used by preview G1 and executor | Modular | 3c | 1 PR | Open — M1, with R3 |
 | R19 | Vocabulary spike — compare vision / map-mined / curated on one tileset; pick approach for R13 | Fit | 3c | time-boxed spike | Open — M1, before R13 |
 | R20 | Synthetic fixture project — original small tileset PNG + generated RXData; no third-party assets | Standard / fit | 3c | 1 PR | Open — M1, before R14 |
-| R21 | API key handling — remove compiled `constants.ts` keys; env/config now, OS-protected storage in M3 | Standard | 3c | 1 PR | Open — before any packaged build |
+| R21 | API key handling — delete compiled `constants.ts` and its lookup; keys only from `config.json` or env; never returned to the renderer (use `has-key`); encrypt with Electron `safeStorage` (env var in browser mode) | Standard | 3c | 1 PR | Open — before any packaged build; do with R23 |
 | R22 | Packaging — installer, Ruby runtime (bundle vs detect), first-run Essentials setup | Fit | 3c | 2+ PRs | Open — M3 |
+| R23 | Lock down local API server — remove `GET /api/config/key` (returns plaintext key), bind `127.0.0.1`, restrict CORS to the dev origin. Today any website can call `:3001` while the app runs | Standard | 3c | 1 PR | Open — **security; do early in M1** |
 
 Add rows as sessions find gaps. Close with PR or ADR reference.
 
