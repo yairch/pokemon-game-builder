@@ -402,6 +402,8 @@ Concrete work from validation — each row should cite which quality pillar it f
 | R21 | API key handling — delete compiled `constants.ts` and its lookup; keys only from `config.json` or env; never returned to the renderer (use `has-key`); encrypt with Electron `safeStorage` (env var in browser mode) | Standard | 3c | 1 PR | Open — before any packaged build; do with R23 |
 | R22 | Packaging — installer, Ruby runtime (bundle vs detect), first-run Essentials setup | Fit | 3c | 2+ PRs | Open — M3 |
 | R23 | Lock down local API server — remove `GET /api/config/key` (returns plaintext key), bind `127.0.0.1`, restrict CORS to the dev origin. Today any website can call `:3001` while the app runs | Standard | 3c | 1 PR | Open — **security; do early in M1** |
+| R24 | API key save feedback — show a success notification in the AI panel after a key is saved | Readable | 3c | small PR | Open |
+| R25 | Live model lists — verify how each provider's model list is built, then populate the picker from the provider's API using the entered key; remove hardcoded model ids and fallbacks (`ai-service-claude.ts`, `ai-service-gemini.ts`); handle a saved model that no longer exists | Fit / standard | 3c | 1 PR | Open — with R16 |
 
 Add rows as sessions find gaps. Close with PR or ADR reference.
 
