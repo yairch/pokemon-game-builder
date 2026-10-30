@@ -9,6 +9,7 @@ import { ipcMain, dialog, app, shell } from 'electron';
 import * as path from 'path';
 import * as h from './handlers';
 import { startApiServer, setSelectDirectoryHandler } from './api-server';
+import { normalizeSetApiKeyPayload, type SetApiKeyPayload } from '../shared/setApiKeyPayload';
 
 // Boot handlers with Electron's userData config path
 h.setConfigPath(path.join(app.getPath('userData'), 'config.json'));
@@ -27,7 +28,10 @@ startApiServer();
 
 ipcMain.handle('get-api-key', () => h.handleGetApiKey().apiKey);
 ipcMain.handle('has-api-key', () => h.handleHasApiKey().hasKey);
-ipcMain.handle('set-api-key', (_event, newApiKey, provider?) => h.handleSetApiKey(newApiKey, provider));
+ipcMain.handle('set-api-key', (_event, data: SetApiKeyPayload) => {
+  const { apiKey, provider } = normalizeSetApiKeyPayload(data);
+  return h.handleSetApiKey(apiKey, provider);
+});
 ipcMain.handle('set-ai-provider', (_event, useClaude: boolean) => h.handleSetProvider(useClaude));
 ipcMain.handle('get-ai-provider', () => h.getCurrentProvider());
 

@@ -1,4 +1,5 @@
 import type { DeletePreflightProgress, DeletePreflightResult } from '../../shared/deletePreflightTypes';
+import { normalizeSetApiKeyPayload } from '../../shared/setApiKeyPayload';
 
 const API_BASE = 'http://localhost:3001/api';
 
@@ -150,10 +151,7 @@ export const bridge = {
           return json.hasKey;
         }
         case 'set-api-key': {
-          // data can be a string (apiKey) or an object { apiKey, provider }
-          const payload = typeof data === 'string' 
-            ? { apiKey: data }
-            : { apiKey: data.apiKey, provider: data.provider };
+          const payload = normalizeSetApiKeyPayload(data);
           const res = await fetch(`${API_BASE}/config/key`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
